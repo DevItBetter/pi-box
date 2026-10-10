@@ -16,7 +16,23 @@ npm run build
 
 On Debian or Ubuntu, install the system tools with `sudo apt install bubblewrap util-linux`.
 
+On Fedora and other distributions that use DNF:
+
+```sh
+sudo dnf install bubblewrap util-linux
+```
+
+These commands install the sandbox tools. You still need the Node.js version and systemd user manager listed above.
+
 Add `bin/pibox` to your PATH or run `npm link` to install the command. By default, pibox mounts your current directory as the workspace. Use `-C` to choose another directory.
+
+### Let an agent set it up
+
+Give your agent this instruction:
+
+> Read https://github.com/DevItBetter/pi-box/blob/main/SETUP.md and follow it to set up pibox on my system.
+
+[SETUP.md](SETUP.md) covers prerequisites, installation, provider configuration, and checks that prove the sandbox runs.
 
 ## Launch options
 

@@ -52,6 +52,7 @@
     "bin",
     "dist",
     "README.md",
+    "SETUP.md",
     "LICENSE"
   ]
 }
