@@ -1,10 +1,10 @@
 # pi-box
 
-Run an interactive [pi](https://github.com/earendil-works/pi) session inside a Linux bubblewrap sandbox. Choose extra network endpoints, pi packages, and extensions before launch. The `pibox` command also supports shell sessions and noninteractive pi calls.
+pi-box runs [pi](https://github.com/earendil-works/pi) inside a Linux bubblewrap sandbox. The `pibox` command lets you choose which endpoints, packages, and extensions pi can use. You can also run a shell or pass a prompt directly to pi.
 
 ## Install
 
-Requires x86_64 Linux, Node.js 23.6 or newer, bubblewrap, util-linux, and a working systemd user manager with cgroup resource controls. No VM image or KVM is needed.
+You need x86_64 Linux, Node.js 23.6 or newer, bubblewrap, util-linux, and a working systemd user manager with cgroup resource controls.
 
 ```sh
 git clone https://github.com/DevItBetter/pi-box.git
@@ -14,38 +14,48 @@ npm run build
 ./bin/pibox -C /path/to/project
 ```
 
-On Debian or Ubuntu, install the system tools with `sudo apt install bubblewrap util-linux`. The command uses the terminal's current directory unless you pass `-C`. You can put `bin/pibox` on PATH or run `npm link` to install the command locally.
+On Debian or Ubuntu, install the system tools with `sudo apt install bubblewrap util-linux`.
+
+Add `bin/pibox` to your PATH or run `npm link` to install the command. By default, pibox mounts your current directory as the workspace. Use `-C` to choose another directory.
 
 ## Launch options
 
 ```sh
-pibox -C ~/dev/project                 # interactive endpoint and capability pickers
-pibox --bare                           # builtin pi tools; normal network policy
-pibox --profile node-dev               # named endpoint selection
-pibox --agent-profile research         # named package/extension selection
-pibox --network restricted             # enforce configured endpoint sets
-pibox --network unrestricted           # host network, endpoint sets inactive
-pibox --network none                   # no networking at all
-pibox --config /path/to/config.json     # use a shared endpoint catalog
-pibox --allow api.example.com          # add one HTTPS host for this launch
+pibox -C ~/dev/project                 # choose extra endpoints, packages, and extensions
+pibox --bare                           # built-in pi tools, no optional packages or extensions
+pibox --profile node-dev               # allow the hosts in an endpoint profile
+pibox --agent-profile research         # enable packages and extensions from a profile
+pibox --network restricted             # enforce the allowlist; this is the default
+pibox --network unrestricted           # use the host network without endpoint restrictions
+pibox --network none                   # disable networking, including provider connections
+pibox --config /path/to/config.json     # read endpoint settings from another file
+pibox --allow api.example.com          # add an HTTPS host in restricted mode
 pibox --read-only                      # read-only project
-pibox --shell                          # bash with the same sandbox boundary
+pibox --shell                          # run bash inside the sandbox
 pibox --print-plan                     # show selections without syncing or launching
 pibox --no-sync                        # reuse the sandbox's existing pi configuration
 pibox --bare -- -p "Review this project"
 ```
 
-`--network` controls networking. `restricted` is the default and enforces an allowlist consisting of the selected provider's endpoints, selected extra endpoint groups, and hosts added with `--allow` or `PIBOX_ALLOW`. `unrestricted` permits the host network without an allowlist. `none` disables networking entirely, including connections to the LLM provider. It is useful for offline work or sandbox shell checks; a remote model cannot respond in that mode.
+`--bare` skips the package and extension picker and disables those optional additions. Pi's built-in tools remain available. This flag does not change network access.
 
-The endpoint picker and `--profile` choose extra endpoints in restricted mode. Clear the picker to allow only the provider, or define an empty endpoint profile and select it with `--profile`. `--allow` always adds hosts to that restricted allowlist. Endpoint options have no effect in unrestricted or none mode.
+Unknown arguments go to pi. Use `--` to pass arguments such as pi's own `--help`. With `--no-sync`, pibox reuses its existing pi configuration. Package and extension selections take effect when you next launch with sync enabled.
 
-`--bare` skips the capability picker and disables optional packages and extensions. Builtin pi tools remain available. It does not change network access.
+The launch pickers show extra endpoints and your global pi packages and extensions. Use arrow keys or `j`/`k` to move, Space to toggle, `a` to select all, `n` to clear, Enter to confirm, and `q` to cancel. On the first launch, all extras are off. Pibox saves your choices in `~/.pibox/state.json` and reuses them for noninteractive launches.
 
-Unknown arguments go to pi. Use `--` to pass arguments such as pi's own `--help`. `--no-sync` preserves the previous sandbox configuration, so a new capability selection takes effect on the next synced launch.
+## Networking
 
-The two checkbox pickers select extra egress endpoints and global pi packages/extensions. Arrow keys or `j`/`k` move, Space toggles, `a` selects all, `n` clears, Enter confirms, and `q` aborts. First launch defaults to no extras. Confirmed selections are saved in `~/.pibox/state.json`; a noninteractive launch reuses them.
+| Mode | Access |
+| --- | --- |
+| `restricted` | Selected provider endpoints, selected extra endpoint groups, and hosts added with `--allow` or `PIBOX_ALLOW`. This is the default. |
+| `unrestricted` | The host network, including localhost and the LAN, without an allowlist. |
+| `none` | No networking. Remote models and host-local model servers cannot respond. Use this for offline work or shell checks. |
 
-`~/.pibox/config.json` holds provider endpoint sets, the extra endpoint catalog, and named selections. Use `--config FILE` for a different catalog. Provider sets apply only when `--network restricted` is active. It is seeded on first launch and can be edited:
+In restricted mode, clear the endpoint picker to allow only the provider. For the same result without the picker, define an empty endpoint profile and select it with `--profile`. `--allow` adds hosts to the allowlist. Endpoint settings have no effect in unrestricted or none mode.
+
+### Provider config
+
+Pibox creates `~/.pibox/config.json` on first launch. Edit it to define provider endpoints, extra endpoint groups, and profiles, or use `--config FILE` to read another file. For example:
 
 ```json
 {
@@ -66,9 +76,11 @@ The two checkbox pickers select extra egress endpoints and global pi packages/ex
 }
 ```
 
-Provider keys name integrations, not model families. An explicit `--provider openrouter` uses only the OpenRouter endpoint set even when `--model` contains an `openai/...` model ID. `--provider openai` uses the direct OpenAI set. With no explicit provider, a recognized leading integration in `--model provider/model` selects its set; otherwise pibox uses pi's saved `defaultProvider`, then the catalog's default. Model names such as `gpt` never select endpoint permissions. Use an explicit provider when a model vendor namespace could be ambiguous.
+Provider keys identify the integration serving the request. `--provider openrouter` selects OpenRouter's endpoints even when the model ID starts with `openai/`. `--provider openai` selects the direct OpenAI endpoints.
 
-Add your own provider key and hostnames for custom gateways. Authentication and model-catalog hosts may differ from inference hosts, so include the endpoints your integration needs. An unknown provider is refused in restricted mode until its set is configured in the catalog. In unrestricted and none modes, provider endpoint sets and extra endpoint selections are inactive.
+Without `--provider`, pibox checks the prefix in `--model provider/model`. If that prefix matches a configured provider, it uses that provider. Otherwise, it uses the `defaultProvider` in your host pi settings, falling back to the pibox config. Pass `--provider` when a model ID could refer to more than one integration.
+
+For a custom gateway, add its provider key and hostnames to `providerEndpoints`. Include authentication and model-catalog hosts if the integration needs them. Restricted mode refuses providers that have no configured endpoint set.
 
 ### Local models
 
@@ -87,33 +99,43 @@ Pi supports OpenAI-compatible local servers, including Ollama, LM Studio, and vL
 }
 ```
 
-Add `"ollama": ["http://localhost:11434"]` to pibox's `providerEndpoints`, then launch `pibox --provider ollama --model qwen2.5-coder:7b`. Pi's model config keeps the `/v1` path; pibox's endpoint config names only the origin.
+Add `"ollama": ["http://localhost:11434"]` to pibox's `providerEndpoints`, then launch `pibox --provider ollama --model qwen2.5-coder:7b`. Keep `/v1` in pi's model config. The pibox entry contains only the scheme, host, and port.
 
-In restricted mode, pibox forwards each explicitly configured local port to the host's `127.0.0.1` service. HTTP and HTTPS origins using `localhost` or `127.0.0.1` are supported. Other local ports remain inaccessible. This permits the service's full TCP interface, including any administrative routes it exposes. Only the selected provider's local endpoints are forwarded; `--allow` cannot enable local access. Local forwarding is disabled in none mode. Unrestricted mode reaches the host server directly.
+In restricted mode, pibox forwards the selected provider's local ports to services on the host's `127.0.0.1`. Each relay carries all TCP traffic to its approved port, including requests to any administrative routes on that service. Other local ports remain inaccessible. `--allow` cannot enable local access.
 
-At most 16 local origins are accepted. Port 18080 is reserved for the public HTTPS proxy. LAN servers and IPv6 loopback origins are not currently supported in restricted mode.
+Local entries accept HTTP or HTTPS URLs using `localhost` or `127.0.0.1`. Pibox creates no local relays in none mode. Unrestricted mode reaches the host server directly.
 
-Package and extension keys are discovered from `~/.pi/agent/settings.json` and `~/.pi/agent/extensions`. Package settings may be strings or objects with a `source` and resource filters. npm and git packages are supported. Host-local package paths are refused because they do not resolve inside the sandbox. Installed package caches are seeded once; update packages inside pibox after that. Selected extension files must be regular `.ts` or `.js` files. Project-local pi resources are ignored by default.
+You can configure up to 16 local entries. Port 18080 is reserved for the public HTTPS proxy. Restricted mode does not support LAN servers or IPv6 loopback URLs.
+
+## Packages and extensions
+
+Pibox reads the available package and extension keys from `~/.pi/agent/settings.json` and `~/.pi/agent/extensions`. Use those keys in `agentProfiles` to save named selections.
+
+Package settings can be strings or objects with a `source` and resource filters. Pibox supports npm and git packages. It refuses host-local package paths because they cannot resolve inside the sandbox. It copies installed package caches once; update packages inside pibox after that.
+
+Selected extensions must be regular `.ts` or `.js` files. Pi ignores project-local resources by default.
 
 ## Sandbox boundary
 
-Pi itself, its packages, extensions, and commands run inside bubblewrap. The sandbox shares the host kernel and runs as the invoking user. It has separate user, PID, IPC, UTS, cgroup, and mount namespaces, dropped capabilities, and a seccomp filter. The launcher refuses to run if required containment is unavailable.
+Pi, its packages, extensions, and commands run inside bubblewrap. The sandbox shares the host kernel and runs as the invoking user. Bubblewrap creates separate user, PID, IPC, UTS, cgroup, and mount namespaces. Pibox drops capabilities and applies a seccomp filter. If required containment is unavailable, the launcher refuses to run.
 
-The project is mounted at `/workspace`, read-write by default. The real host home, other projects, and credentials outside the chosen mounts are absent. `/usr` and selected certificate/runtime files under `/etc` are read-only. Node.js and the bundled pi dependency are mounted read-only. `/tmp` and the sandbox home use isolated tmpfs mounts. The host cache and copied pi state are writable.
+Pibox mounts your project at `/workspace`, read-write by default. The host home, other projects, and credentials outside the chosen mounts are absent. It mounts `/usr`, selected certificate and runtime files under `/etc`, Node.js, and the bundled pi dependency read-only. `/tmp` and the sandbox home use isolated tmpfs mounts. The cache and copied pi state are writable.
 
-The launcher refuses home-directory workspaces, hidden home directories, nested mounts, sockets, pipes, devices, and symlink `.git` entries. An existing `.git` is mounted read-only. Pi can edit project files but cannot commit or change Git metadata. Linked worktree pointers may name inaccessible host paths.
+The launcher refuses home-directory workspaces, hidden home directories, nested mounts, sockets, pipes, devices, and symlink `.git` entries. It mounts an existing `.git` read-only, so pi can edit project files but cannot commit or change Git metadata. Linked worktree pointers may refer to host paths the sandbox cannot access.
 
-In restricted mode, the sandbox has an isolated network namespace with no direct network access. An external proxy allows HTTPS CONNECT tunnels only to selected public hostnames, checks TLS SNI, and refuses localhost, LAN, metadata, and other nonpublic addresses. Explicit local provider origins use separate relays with fixed destinations. Tools that ignore the proxy can reach only those configured local ports. Provider-specific sets come from the catalog; the picker, profiles, and `--allow` add extra public hosts. An allowed endpoint can receive project contents. Provider-side features such as web search use the provider connection.
+Restricted mode isolates the network namespace. An external proxy permits HTTPS CONNECT tunnels to allowed public hostnames, checks the TLS server name, and blocks localhost, LAN, cloud metadata, and other nonpublic addresses. Configured local provider ports use separate relays with fixed destinations. Tools that ignore the proxy can reach only those local ports.
 
-Unrestricted mode shares the host network and does not start the endpoint proxy. The sandbox can reach localhost and the LAN in this mode. None mode keeps an isolated network namespace and starts no proxy, even if hosts were supplied. Filesystem, process, seccomp, and resource limits remain in force in every mode.
+An allowed endpoint can receive project contents. Provider features such as web search use the provider connection.
+
+Unrestricted mode shares the host network without a proxy. None mode isolates the network and starts neither a proxy nor local relays, even if you supplied endpoints. Filesystem, process, seccomp, and resource limits apply in every mode.
 
 ## Pi state
 
-The sandbox uses `~/.pibox/agent`, separate from the host's `~/.pi/agent`. Host auth, model metadata, and keybindings sync one way when the host copy is newer. Tokens refreshed inside pibox survive later launches. Sessions stay in the pibox copy. Settings and selected extensions are regenerated on synced launches.
+The sandbox uses `~/.pibox/agent`. On synced launches, pibox copies authentication files, model metadata, and keybindings from `~/.pi/agent` when the host copy is newer. Tokens refreshed inside pibox survive later launches. Sessions stay in the pibox directory. Pibox rewrites settings and selected extensions on each synced launch.
 
-Copied provider credentials are readable inside the sandbox, including by selected extensions and shell commands. The sandbox can change its copy and cannot write to the original host pi directory through these mounts. Never choose a workspace that contains secrets you do not want pi to read.
+Selected extensions and shell commands can read the copied provider credentials. The sandbox can change its copies, but these mounts give it no write access to the host's pi directory. Choose a workspace whose contents you are comfortable letting pi read.
 
-One session may use a state directory at a time. A lock covers sync, launch, and cleanup. If a process was killed abruptly, inspect the corresponding `pibox-*.scope` before removing `active.lock`. A failed containment cleanup keeps the lock and reports the scope name.
+Only one session can use a state directory at a time. Pibox holds a lock during sync, launch, and cleanup. After an abrupt stop, inspect the session's `pibox-*.scope` before removing `active.lock`. If pibox cannot confirm containment cleanup, it keeps the lock and reports the scope name.
 
 ## Resource limits
 
@@ -128,11 +150,13 @@ One session may use a state directory at a time. A lock covers sync, launch, and
 | `PIBOX_WRITE_GROWTH_MAX` | `8G` | Monitored growth of other writable mounts |
 | `PIBOX_DISK_QUOTA_ROOT` | unset | Optional quota-limited btrfs subvolume |
 
-Disk monitoring can overshoot and cannot account for every open, unlinked file. It is not a hard aggregate disk bound. Every launch announces that limitation when no quota root is configured. To enforce a hard bound, configure a limited btrfs qgroup and set `PIBOX_DISK_QUOTA_ROOT` to its subvolume root. Every writable disk directory must live in that subvolume; the launcher verifies this and refuses failures. There is no fallback after a configured quota check fails.
+Disk monitoring can overshoot and miss open files that have been unlinked. Without a quota root, pibox reports that it has no hard limit on total disk use.
+
+For a hard limit, configure a btrfs qgroup with a size limit and set `PIBOX_DISK_QUOTA_ROOT` to its subvolume root. Every writable disk directory must be inside that subvolume. Pibox checks this before launch and refuses to run if the configured quota check fails.
 
 ## Integration
 
-The launcher has no dependency on a particular orchestrator or repository layout. Consumers can invoke the CLI or import its session API. The API takes explicit workspace, state, and egress choices and returns the child exit code. It owns the state lock and cleanup; it does not schedule work, choose models, review changes, or capture Git commits.
+Call the CLI from another tool or import `runPiBox` to run a session. The API accepts the workspace, state directory, network settings, and pi arguments. It handles the state lock and cleanup, then returns the child process's exit code.
 
 ```ts
 import { runPiBox } from "pi-box";
@@ -148,12 +172,20 @@ const exitCode = await runPiBox({
 });
 ```
 
-The caller supplies prepared state, or an optional `sync` object with `source`, `settings`, `packages`, and `extensions`. For local models, pass `localEndpoints: ["http://127.0.0.1:11434"]`; these apply only in restricted mode. Give each concurrent job a separate state directory. Resource limits use the documented environment variables. `pi-box/config` exports provider selection and endpoint resolution helpers. `pi-box/sandbox` exports mount construction, resource monitoring, and seccomp launch helpers; `pi-box/egress` exports the proxy for consumers that need lower-level assembly.
+Prepare the state directory yourself or pass a `sync` object with `source`, `settings`, `packages`, and `extensions`. For local models in restricted mode, pass `localEndpoints: ["http://127.0.0.1:11434"]`. Give each concurrent job a separate state directory. Set resource limits through the environment variables listed above.
 
-The package ships compiled JavaScript and TypeScript declarations. Install it from Git with `npm install git+https://github.com/DevItBetter/pi-box.git`. There is no npm registry release yet. The Git installation runs the build during preparation.
+For direct access to individual components:
+
+- `pi-box/config` exports provider selection and endpoint helpers.
+- `pi-box/sandbox` exports mount construction, resource monitoring, and seccomp launch helpers.
+- `pi-box/egress` exports the public HTTPS proxy.
+
+Install the package with `npm install git+https://github.com/DevItBetter/pi-box.git`. The Git installation builds the JavaScript and TypeScript declarations. There is no npm registry release yet.
 
 ## Development
 
-`npm run check` runs strict type checking and free tests. `npm run test:live` runs pi in a real bubblewrap sandbox and checks host isolation, read-write/read-only mounts, clean environment, allowed provider HTTPS, and blocked egress. It also completes a pi request against a temporary local API fixture and checks that an unapproved local service is inaccessible. It needs a working user manager and outbound HTTPS; it makes no paid model request.
+`npm run check` runs strict type checking, the build, and unit tests.
+
+`npm run test:live` runs pi inside bubblewrap and checks host isolation, writable and read-only mounts, the guest environment, allowed provider HTTPS, and blocked connections. It also completes a pi request against a temporary local API fixture and checks that an unapproved local service is inaccessible. The live test needs a working systemd user manager and outbound HTTPS. It makes no paid model request.
 
 Licensed under [Apache 2.0](LICENSE).
