@@ -1,0 +1,57 @@
+{
+  "name": "pi-box",
+  "version": "0.1.0",
+  "description": "Interactive pi sessions inside bubblewrap with launch-time egress and capability selection",
+  "private": false,
+  "type": "module",
+  "bin": {
+    "pibox": "bin/pibox"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts",
+    "test:live": "node test/live.ts",
+    "check": "npm run typecheck && npm run build && npm test",
+    "build": "tsc -p tsconfig.build.json && cp src/sandbox/egress-forwarder.mjs dist/sandbox/egress-forwarder.mjs",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=23.6.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DevItBetter/pi-box.git"
+  },
+  "license": "Apache-2.0",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./sandbox": {
+      "types": "./dist/sandbox/bwrap.d.ts",
+      "import": "./dist/sandbox/bwrap.js"
+    },
+    "./egress": {
+      "types": "./dist/sandbox/egress-proxy.d.ts",
+      "import": "./dist/sandbox/egress-proxy.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js"
+    }
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md",
+    "LICENSE"
+  ]
+}

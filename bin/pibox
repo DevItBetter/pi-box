@@ -1,0 +1,10 @@
+#!/bin/bash -p
+set -euo pipefail
+self="$(readlink -f -- "$0")"
+root="$(dirname -- "$(dirname -- "$self")")"
+workspace="$PWD"
+# Resolve the runtime away from project-local mise configuration.
+cd /
+entry="$root/dist/pibox.js"
+[ -f "$entry" ] || entry="$root/src/pibox.ts"
+exec node "$entry" -C "$workspace" "$@"
