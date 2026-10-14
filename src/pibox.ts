@@ -41,6 +41,7 @@ let networkMode: "restricted" | "unrestricted" | "none" = "restricted";
 let egressProfile: string | undefined;
 let agentBare = false;
 let agentProfile: string | undefined;
+let maintenance: "setup" | "doctor" | undefined;
 const extraAllow: string[] = [];
 if (process.env["PIBOX_ALLOW"] !== undefined && process.env["PIBOX_ALLOW"] !== "") {
   extraAllow.push(...process.env["PIBOX_ALLOW"].split(",").map((h) => h.trim()));
@@ -48,6 +49,11 @@ if (process.env["PIBOX_ALLOW"] !== undefined && process.env["PIBOX_ALLOW"] !== "
 const piArgs: string[] = [];
 
 const argv = process.argv.slice(2);
+// bin/pibox prepends -C; recognize subcommands there as well as direct invocation.
+const commandIndex = argv[0] === "-C" ? 2 : 0;
+if (argv[commandIndex] === "setup" || argv[commandIndex] === "doctor") {
+  maintenance = argv.splice(commandIndex, 1)[0] as "setup" | "doctor";
+}
 for (let i = 0; i < argv.length; i++) {
   const arg = argv[i]!;
   switch (arg) {
@@ -101,7 +107,10 @@ for (let i = 0; i < argv.length; i++) {
       console.log(
         "usage: pibox [--shell] [--no-sync] [-C dir] [--allow HOST]...\n" +
           "             [--network MODE] [--profile NAME] [--bare | --agent-profile NAME]\n" +
-          "             [--print-plan] [pi args...]\n\n" +
+           "             [--print-plan] [pi args...]\n\n" +
+           "       pibox setup|doctor [--config FILE] [--provider NAME]\n" +
+           "  setup           Discover Pi providers and add their egress endpoints.\n" +
+           "  doctor          Check provider authentication and egress config without writing.\n\n" +
           "Personal pi agent inside bubblewrap. Workspace = cwd (or -C dir).\n" +
           "  --network MODE  restricted (default): enforce the allowed-host list.\n" +
           "                  unrestricted: host network, no endpoint restrictions.\n" +
@@ -128,6 +137,14 @@ for (let i = 0; i < argv.length; i++) {
     default:
       piArgs.push(arg);
   }
+}
+
+if (maintenance) {
+  const { runSetup } = await import("./setup.ts");
+  const selected = providerForArgs(piArgs, "", {});
+  try { process.exitCode = await runSetup(maintenance, configPath, piAgentDir, piboxAgentDir, selected || undefined); }
+  catch (error) { fail((error as Error).message); }
+  process.exit(process.exitCode ?? 0);
 }
 
 workspace = validateWorkspace(workspace);

@@ -11,6 +11,7 @@ git clone https://github.com/DevItBetter/pi-box.git
 cd pi-box
 npm ci --ignore-scripts
 npm run build
+./bin/pibox setup
 ./bin/pibox -C /path/to/project
 ```
 
@@ -37,6 +38,8 @@ Give your agent this instruction:
 ## Launch options
 
 ```sh
+pibox setup                            # discover providers and configure their egress endpoints
+pibox doctor                           # report authentication and endpoint problems
 pibox -C ~/dev/project                 # choose extra endpoints, packages, and extensions
 pibox --bare                           # built-in pi tools, no optional packages or extensions
 pibox --profile node-dev               # allow the hosts in an endpoint profile
@@ -70,6 +73,14 @@ The launch pickers show extra endpoints and your global pi packages and extensio
 In restricted mode, clear the endpoint picker to allow only the provider. For the same result without the picker, define an empty endpoint profile and select it with `--profile`. `--allow` adds hosts to the allowlist. Endpoint settings have no effect in unrestricted or none mode.
 
 ### Provider config
+
+Run `pibox setup` after configuring or signing into a provider in Pi. It reads Pi settings, stored authentication, custom `models.json` providers, and built-in provider metadata. It adds exact API and known authentication hosts to `providerEndpoints`, including the account-specific Copilot API host. Existing entries, profiles, and other settings remain intact. `--config FILE` chooses another pibox config; `--provider NAME` includes a provider you want to configure before signing in.
+
+`pibox doctor` performs the same discovery without writing files. Both commands report missing authentication, API-key commands that need manual verification, unsupported URLs, and unknown extension endpoints. Exit status is 0 when all discovered providers have usable offline authentication configuration and endpoint rules, 1 when something needs attention, or 2 for invalid input. Setup writes the endpoints it can discover even when authentication still needs attention.
+
+These checks make no network or model requests, refresh no tokens, execute no API-key commands or extensions, and leave Pi credentials unchanged. They inspect the newer host or sandbox authentication and model files, matching normal sync behavior. Expired OAuth tokens are reported as needing refresh by Pi. Authentication validity and connectivity still need verification when you use the provider.
+
+The sandbox does not inherit host API-key environment variables or cloud credential files. Use `/login` inside pibox to store credentials in its Pi state, or configure Pi's `models.json` for the sandbox. For a new provider, run `pibox setup --provider NAME`, launch `pibox --provider NAME`, complete `/login`, and rerun setup. Custom API-key commands and extension providers may need manual configuration. Providers with regional or account-specific URL placeholders need concrete endpoint rules.
 
 Pibox creates `~/.pibox/config.json` on first launch. Edit it to define provider endpoints, extra endpoint groups, and profiles, or use `--config FILE` to read another file. For example:
 

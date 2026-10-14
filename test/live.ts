@@ -20,7 +20,7 @@ try {
   });
   const workspace = join(dir, "project"); mkdirSync(workspace);
   const outside = join(dir, "host-secret"); writeFileSync(outside, "must remain hidden");
-  const run = (extra: string[], input?: string) => spawnSync(join(root, "bin/pibox"), ["-C", workspace, "--bare", "--no-sync", ...extra], {
+  const run = (extra: string[], input?: string) => spawnSync(join(root, "bin/pibox"), ["-C", workspace, "--bare", "--no-sync", ...(extra.includes("--provider") ? [] : ["--provider", "openai"]), ...extra], {
     env: { ...process.env, PIBOX_HOME: join(dir, "state") }, encoding: "utf8", timeout: 60000, ...(input ? { input } : {}),
   });
   const none = run(["--network", "none", "--print-plan"]);
@@ -41,7 +41,7 @@ try {
   assert.notEqual(ro.status, 0);
   assert.match(ro.stderr, /Read-only file system/);
   mkdirSync(join(dir, "state", "cache"), { recursive: true });
-  const overlap = spawnSync(join(root, "bin/pibox"), ["-C", join(dir, "state", "cache"), "--bare", "--no-sync", "--read-only", "--shell"], { env: { ...process.env, PIBOX_HOME: join(dir, "state") }, encoding: "utf8", timeout: 10000 });
+  const overlap = spawnSync(join(root, "bin/pibox"), ["-C", join(dir, "state", "cache"), "--bare", "--no-sync", "--provider", "openai", "--read-only", "--shell"], { env: { ...process.env, PIBOX_HOME: join(dir, "state") }, encoding: "utf8", timeout: 10000 });
   assert.notEqual(overlap.status, 0);
   assert.match(overlap.stderr, /cache, state, and workspace must be separate/);
   const offline = run(["--network", "none", "--allow", "api.openai.com", "--shell"], "curl -sS --max-time 2 https://api.openai.com/v1/models\n");

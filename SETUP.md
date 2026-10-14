@@ -135,11 +135,15 @@ Pibox reports that disk growth is monitored unless a hard disk quota is configur
 
 Reuse the user's existing pi configuration. Pibox normally copies it from `~/.pi/agent` into `~/.pibox/agent`. Never print authentication files or copy credentials into the repository.
 
+Run `pibox setup` to discover configured providers and add their API and authentication endpoints without replacing existing rules. Then run `pibox doctor` for a read-only authentication and endpoint check. These commands make no network requests and do not verify live token validity. Exit status 1 reports items needing attention; setup still saves endpoints it can discover. For a provider not yet configured in Pi, use `pibox setup --provider NAME` before sign-in.
+
 Use an explicitly selected provider when an integration and a model's vendor name differ. For example, OpenRouter serving an OpenAI model needs `--provider openrouter` and the OpenRouter endpoint set. Add custom providers to `providerEndpoints` in `~/.pibox/config.json` without replacing other entries. Keep restricted networking as the default; `--allow HOST` adds extra public hosts.
 
 For a local model, follow the README's [local model instructions](README.md#local-models). Configure pi's model and base URL, then add its loopback origin to that provider's pibox endpoint list. Verify that the server is listening on the host's `127.0.0.1` before launch. Keep the model URL's API path in pi's config and use only the origin in pibox's config.
 
 If authentication is missing, explain how to launch pibox with the chosen provider and use pi's `/login` command. Let the user complete interactive sign-in. Do not make a paid inference request just to finish setup unless the user asked for one.
+
+Rerun `pibox setup` after sign-in to capture account-specific endpoints, then run `pibox doctor` again. Host environment keys and cloud credential files are absent from the sandbox. Follow the doctor's guidance to configure authentication in pibox's Pi state. Unknown extension providers and unresolved regional URLs need explicit endpoint configuration.
 
 ## 7. Report the result
 

@@ -48,7 +48,7 @@ export function providerForArgs(args: string[], fallback: string, providers: Rec
 /** The restricted allowlist is provider hosts plus selected extras and explicit additions. */
 export function restrictedHosts(config: PiboxConfig, provider: string, extras: string[], explicit: string[]): string[] {
   if (!Object.hasOwn(config.providerEndpoints, provider)) {
-    throw new Error(`no endpoint set for provider ${provider}; add it to providerEndpoints in config.json`);
+    throw new Error(`no endpoint set for provider ${provider}; run pibox setup or add it to providerEndpoints in config.json`);
   }
   return [...new Set([...config.providerEndpoints[provider]!.filter((entry) => !entry.includes("://")), ...extras.flatMap((key) => config.endpoints[key] ?? []), ...explicit])];
 }
