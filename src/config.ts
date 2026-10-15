@@ -1,11 +1,26 @@
 import { parseLocalEndpoints } from "./sandbox/local-relay.ts";
 
+export type SelectionProfile = string[] | { members: string[]; label?: string; description?: string };
+export type SelectionProfiles = Record<string, SelectionProfile>;
+
+export function profileMembers(profile: SelectionProfile): string[] {
+  return Array.isArray(profile) ? profile : profile.members;
+}
+
+export function profileLabel(name: string, profile: SelectionProfile): string {
+  return Array.isArray(profile) ? name : profile.label ?? name;
+}
+
+export function profileDescription(profile: SelectionProfile): string {
+  return Array.isArray(profile) ? "" : profile.description ?? "";
+}
+
 export interface PiboxConfig {
   defaultProvider: string;
   providerEndpoints: Record<string, string[]>;
   endpoints: Record<string, string[]>;
-  endpointProfiles: Record<string, string[]>;
-  agentProfiles: Record<string, string[]>;
+  endpointProfiles: SelectionProfiles;
+  agentProfiles: SelectionProfiles;
 }
 
 export const DEFAULT_CONFIG: PiboxConfig = {

@@ -6,6 +6,8 @@
 // confirm · q/esc/Ctrl-C abort. Resolves to the selected item keys, or null
 // on abort.
 
+import { profileDescription, profileLabel, profileMembers, type SelectionProfiles } from "./config.ts";
+
 export interface PickerItem {
   key: string;
   detail: string;
@@ -18,12 +20,12 @@ export interface PickerSpec {
   emptyLabel?: string;
   items: PickerItem[];
   /** profile name → member item keys */
-  profiles: Record<string, string[]>;
+  profiles: SelectionProfiles;
 }
 
 type Row =
   | { kind: "none" }
-  | { kind: "profile"; name: string; members: string[] }
+  | { kind: "profile"; name: string; label: string; description: string; members: string[] }
   | { kind: "item"; item: PickerItem };
 
 export function pickItems(spec: PickerSpec, preselected: ReadonlySet<string>): Promise<Set<string> | null> {
@@ -32,15 +34,17 @@ export function pickItems(spec: PickerSpec, preselected: ReadonlySet<string>): P
 
   const rows: Row[] = [
     { kind: "none" },
-    ...Object.entries(spec.profiles).map(([name, members]) => ({
+    ...Object.entries(spec.profiles).map(([name, profile]) => ({
       kind: "profile" as const,
       name,
-      members: members.filter((k) => keys.includes(k)),
+      label: profileLabel(name, profile),
+      description: profileDescription(profile),
+      members: profileMembers(profile).filter((k) => keys.includes(k)),
     })),
     ...spec.items.map((item) => ({ kind: "item" as const, item })),
   ];
   const labelWidth = Math.max(
-    ...rows.map((r) => (r.kind === "profile" ? r.name.length : r.kind === "item" ? r.item.key.length : 0)),
+    ...rows.map((r) => (r.kind === "profile" ? r.label.length : r.kind === "item" ? r.item.key.length : 0)),
     8,
   );
   let cursor = 0;
@@ -61,7 +65,9 @@ export function pickItems(spec: PickerSpec, preselected: ReadonlySet<string>): P
       } else if (row.kind === "profile") {
         const on = row.members.length > 0 && row.members.every((k) => selected.has(k));
         const partial = !on && row.members.some((k) => selected.has(k));
-        out.push(`  ${cur}${box(on, partial)} ${row.name.padEnd(labelWidth)}  profile: ${row.members.join(", ")}${end}`);
+        const detail = row.description || `profile: ${row.members.join(", ")}`;
+        const key = row.label === row.name ? "" : ` [${row.name}]`;
+        out.push(`  ${cur}${box(on, partial)} ${row.label.padEnd(labelWidth)}${key}  ${detail}${end}`);
       } else {
         out.push(`  ${cur}${box(selected.has(row.item.key))} ${row.item.key.padEnd(labelWidth)}  ${row.item.detail}${end}`);
       }

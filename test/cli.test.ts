@@ -10,7 +10,7 @@ test("profiles lists catalog members without validating the workspace or loading
   const dir = mkdtempSync(join(tmpdir(), "pibox-profiles-"));
   try {
     const config = join(dir, "config.json");
-    writeFileSync(config, JSON.stringify({ ...DEFAULT_CONFIG, endpointProfiles: { minimal: [], dev: ["npm", "github"] } }));
+    writeFileSync(config, JSON.stringify({ ...DEFAULT_CONFIG, endpointProfiles: { minimal: [], dev: ["npm", "github"], described: { members: ["github"], label: "GitHub access", description: "Fetch repository sources" } } }));
     const result = spawnSync(process.execPath, [new URL("../src/pibox.ts", import.meta.url).pathname, "profiles", "--config", config, "-C", "/"], {
       env: { ...process.env, PIBOX_HOME: dir }, encoding: "utf8", timeout: 5000,
     });
@@ -18,6 +18,7 @@ test("profiles lists catalog members without validating the workspace or loading
     assert.match(result.stdout, /Endpoint groups:\n  npm: registry.npmjs.org/);
     assert.match(result.stdout, /minimal: \(empty\)/);
     assert.match(result.stdout, /dev: npm, github/);
+    assert.match(result.stdout, /described \[GitHub access\]: github.*Fetch repository sources/);
     assert.match(result.stdout, /Capability profiles:\n  research: pkg:pi-web-access, pkg:pi-lens/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

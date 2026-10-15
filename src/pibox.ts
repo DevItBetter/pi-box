@@ -6,7 +6,7 @@ import { runPiBox } from "./index.ts";
 import { packageSource, type PackageSpec } from "./state.ts";
 import { pickItems, type PickerItem } from "./picker.ts";
 
-import { DEFAULT_CONFIG, localProviderEndpoints, providerForArgs, restrictedHosts, type PiboxConfig } from "./config.ts";
+import { DEFAULT_CONFIG, localProviderEndpoints, profileDescription, profileLabel, profileMembers, providerForArgs, restrictedHosts, type PiboxConfig, type SelectionProfiles } from "./config.ts";
 
 interface PiboxState { endpoints: string[]; agent: string[]; }
 
@@ -179,7 +179,11 @@ if (listProfiles) {
     ["Capability profiles", config.agentProfiles],
   ] as const) {
     console.log(`${title}:`);
-    for (const [name, members] of Object.entries(entries)) console.log(`  ${name}: ${members.join(", ") || "(empty)"}`);
+    for (const [name, profile] of Object.entries(entries)) {
+      const label = profileLabel(name, profile);
+      const description = profileDescription(profile);
+      console.log(`  ${name}${label === name ? "" : ` [${label}]`}: ${profileMembers(profile).join(", ") || "(empty)"}${description ? ` — ${description}` : ""}`);
+    }
     if (!Object.keys(entries).length) console.log("  (none)");
   }
   process.exit(0);
@@ -211,16 +215,16 @@ const agentItems: PickerItem[] = [
 
 // ---- selection resolution --------------------------------------------------
 
-function fromProfile(name: string, profiles: Record<string, string[]>, what: string): Set<string> {
-  const members = profiles[name];
-  if (members === undefined) fail(`unknown ${what} profile "${name}" (defined in ${configPath})`);
-  return new Set(members);
+function fromProfile(name: string, profiles: SelectionProfiles, what: string): Set<string> {
+  const profile = profiles[name];
+  if (profile === undefined) fail(`unknown ${what} profile "${name}" (defined in ${configPath})`);
+  return new Set(profileMembers(profile));
 }
 
 async function resolveSelection(
   none: boolean,
   profile: string | undefined,
-  profiles: Record<string, string[]>,
+  profiles: SelectionProfiles,
   items: PickerItem[],
   last: string[],
   title: string,

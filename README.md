@@ -142,6 +142,18 @@ Pibox reads the available package and extension keys from `~/.pi/agent/settings.
 
 Package settings can be strings or objects with a `source` and resource filters. Pibox supports npm and git packages. It refuses host-local package paths because they cannot resolve inside the sandbox. It copies installed package caches once; update packages inside pibox after that.
 
+Endpoint and capability profiles accept a member array or an object with a label and description. Both the picker and `pibox profiles` display this metadata. For example:
+
+```json
+"agentProfiles": {
+  "research": {
+    "members": ["pkg:pi-web-access", "pkg:pi-lens"],
+    "label": "Research tools",
+    "description": "Web access and source inspection"
+  }
+}
+```
+
 Selected extensions must be regular `.ts` or `.js` files. Pi ignores project-local resources by default.
 
 ## Sandbox boundary
