@@ -1,6 +1,6 @@
 # Agent setup instructions
 
-Follow this file when a user asks you to install and configure pibox. Your job is to leave them with a working command, a verified sandbox, and instructions for connecting their provider. Read [README.md](README.md) for the network options and config formats. [AGENTS.md](https://github.com/DevItBetter/pi-box/blob/main/AGENTS.md) governs changes to this repository's code.
+Follow this file to install and configure pibox. Verify that the command runs a sandbox, then explain how to connect the user's provider. Read [README.md](README.md) for network options and config formats. Follow [AGENTS.md](https://github.com/DevItBetter/pi-box/blob/main/AGENTS.md) when changing repository code.
 
 Preserve existing pi settings, credentials, shell configuration, and unrelated files. Reuse working tools and install only what is missing. Run pibox and npm as the user who will use them. Use elevated permissions only for system packages or necessary host setup.
 
@@ -127,13 +127,13 @@ npm run check
 npm run test:live
 ```
 
-The live test checks filesystem isolation, writable and read-only mounts, the guest environment, all network modes, and a pi completion against a temporary local API fixture. It also verifies that an unapproved local port is blocked. It needs outbound HTTPS but makes no paid model request. If outbound access is unavailable, report that the live network checks remain unverified.
+The live test checks filesystem isolation, writable and read-only mounts, the guest environment, all network modes, terminal resizing, direct execution, and a pi completion against a temporary local API fixture. It also verifies concurrent read-write and read-only instances in one workspace, separate state and scopes, independent cleanup, status reporting, and blocked unapproved local ports. It needs outbound HTTPS but makes no paid model request. If outbound access is unavailable, report that the live network checks remain unverified.
 
 Pibox reports that disk growth is monitored unless a hard disk quota is configured. That message alone is not a setup failure. Leave the default limits unless the user requests different ones. Use the README's btrfs quota instructions when a hard total disk limit is required.
 
 ## 6. Connect the user's provider
 
-Reuse the user's existing pi configuration. Pibox normally copies it from `~/.pi/agent` into `~/.pibox/agent`. Never print authentication files or copy credentials into the repository.
+Reuse the user's existing pi configuration. Pibox copies it from `~/.pi/agent` into the allocated instance's agent directory. The first slot is `~/.pibox/agent`; further automatic slots live under `~/.pibox/instances/auto-N/agent`. Named slots use `~/.pibox/instances/NAME/agent`. Never print authentication files or copy credentials into the repository.
 
 Run `pibox setup` to discover configured providers and add their API and authentication endpoints without replacing existing rules. Then run `pibox doctor` for a read-only authentication and endpoint check. These commands make no network requests and do not verify live token validity. Exit status 1 reports items needing attention; setup still saves endpoints it can discover. For a provider not yet configured in Pi, use `pibox setup --provider NAME` before sign-in.
 
@@ -145,8 +145,29 @@ If authentication is missing, explain how to launch pibox with the chosen provid
 
 Rerun `pibox setup` after sign-in to capture account-specific endpoints, then run `pibox doctor` again. Host environment keys and cloud credential files are absent from the sandbox. Follow the doctor's guidance to configure authentication in pibox's Pi state. Unknown extension providers and unresolved regional URLs need explicit endpoint configuration.
 
+Use the same instance name throughout a slot-specific login:
+
+1. Run `pibox setup --instance NAME`.
+2. Launch `pibox --instance NAME` with the provider and model arguments, then complete `/login`.
+3. Rerun setup and doctor with `--instance NAME`.
+
+Without a name, setup and doctor inspect default state. Launches use the first free slot. Credentials created or refreshed inside one slot stay there.
+
 ## 7. Report the result
 
 Tell the user where pibox is installed, which Node.js executable it uses, how to launch it in their project, and which checks passed. List any shell or host-session changes. Distinguish a working sandbox from provider authentication or network checks that still need attention.
 
 Give them a command using their provider and workspace, such as `pibox -C /path/to/project --provider openrouter`. Explain any remaining blocker with the failing command and the next action needed.
+
+Show how to run two instances from separate terminals in the same project:
+
+```sh
+pibox --instance writer
+pibox --instance reviewer --read-only
+```
+
+Each gets separate state and cache. Without `--instance`, pibox chooses a free slot. The reader sees live writer changes but cannot write through its project mount. Resource limits apply per instance.
+
+Explain that `--no-sync` and `pibox exec -- COMMAND ARG...` reuse the chosen slot without copying host config. New slots start empty in these modes.
+
+Point to `pibox --help` for the command summary and the README for profiles, defaults, previews, and state paths. Show `pibox status` and `pibox status --instance reviewer --json` to inspect slots. Status never clears locks. If a slot retains a lock after an abnormal exit, inspect its recorded scope before any manual cleanup.

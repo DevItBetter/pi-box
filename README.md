@@ -41,7 +41,8 @@ Give your agent this instruction:
 pibox setup                            # discover providers and configure their egress endpoints
 pibox doctor                           # report authentication and endpoint problems
 pibox profiles                         # list endpoint groups and selection profiles
-pibox status --json                    # inspect the session using this PIBOX_HOME
+pibox status --json                    # inspect all instance slots under PIBOX_HOME
+pibox --instance review --read-only     # reuse isolated state named review
 pibox --save-defaults                  # choose default selections and exit
 pibox -C ~/dev/project                 # choose extra endpoints, packages, and extensions
 pibox --bare                           # built-in pi tools, no optional packages or extensions
@@ -64,15 +65,32 @@ pibox --bare -- -p "Review this project"
 
 `--bare` skips the package and extension picker and disables those optional additions. Pi's built-in tools remain available. This flag does not change network access.
 
-`pibox exec [options] -- COMMAND ARG...` runs an argv directly at `/workspace` and returns its exit status. Arguments keep their boundaries; shell syntax requires an explicit shell, such as `pibox exec -- /bin/bash -c 'echo hello'`. Exec uses remembered or explicit endpoint selections without prompting, reuses existing sandbox state without syncing, and leaves remembered selections unchanged. It uses the same state lock, filesystem isolation, network rules, and resource limits as Pi. `--shell`, `--bare`, `--agent-profile`, and `--save-defaults` do not apply to exec. Use `--provider NAME` to select the restricted provider endpoints.
+### Run a command
+
+`pibox exec [options] -- COMMAND ARG...` runs a command at `/workspace` and returns its exit status. It passes each argument unchanged. To use shell syntax, name the shell:
+
+```sh
+pibox exec -- npm test
+pibox exec --network none -- /bin/bash -c 'pwd && ls'
+```
+
+Exec uses remembered or explicit endpoint selections without prompting. It reuses the allocated slot without syncing and leaves remembered selections unchanged. State locking, filesystem isolation, network rules, and resource limits still apply. Exec rejects `--shell`, `--bare`, `--agent-profile`, and `--save-defaults`. Use `--provider NAME` to choose the restricted provider endpoints.
 
 Unknown arguments go to pi. Use `--` to pass arguments such as pi's own `--help`. With `--no-sync`, pibox reuses its existing pi configuration. Package and extension selections take effect when you next launch with sync enabled.
 
-Launch previews include workspace access, endpoint rules, state location, packages, extension paths, the guest command, and resource limits. `--print-plan=json` writes a versioned JSON object to stdout and skips the pickers. With `--no-sync`, previews report the packages and extensions already in sandbox state. The command is the guest Pi or shell command; restricted-mode network plumbing is started around it at launch. Previews do not probe containment or provider connectivity.
+### Preview a launch
+
+`--print-plan` shows workspace access, endpoint rules, state location, packages, extension paths, the guest command, and resource limits. `--print-plan=json` writes a versioned JSON object to stdout and skips the pickers.
+
+With `--no-sync`, previews report the packages and extensions already in the selected state. For automatic allocation, the preview describes the default slot; pibox chooses a free slot at launch. The command shown runs inside the guest. Restricted launches also start the network forwarder. A preview does not test containment or provider connectivity.
+
+### Remember selections and defaults
 
 The launch pickers show extra endpoints and your global pi packages and extensions. Use arrow keys or `j`/`k` to move, Space to toggle, `a` to select all, `n` to clear, Enter to confirm, and `q` to cancel. On the first launch, all extras are off. Pibox saves your choices in `~/.pibox/state.json` and reuses them for noninteractive launches.
 
-Optional `defaultSelections` in the config contains `endpoints` and `agent` arrays. Defaults apply only when the corresponding remembered selection is absent. Remembered empty arrays stay empty. Explicit profiles and `--bare` take precedence. `--save-defaults` saves the resolved selections to the chosen config and exits without launching or changing remembered selections. Combine it with `--no-tui` or explicit profiles to skip prompts. It cannot be combined with `--print-plan`.
+Set `defaultSelections` in the config with `endpoints` and `agent` arrays. Pibox uses each default only when that remembered selection is absent. Remembered empty arrays stay empty. Explicit profiles and `--bare` take precedence.
+
+Use `--save-defaults` to save your selections to the chosen config and exit. It does not launch Pi or change remembered selections. Add `--no-tui` or explicit profiles to skip prompts. You cannot combine it with `--print-plan`.
 
 Remembered selections and saved defaults use atomic file replacement, so an interrupted write cannot leave a partially written destination file.
 
@@ -92,7 +110,7 @@ Run `pibox setup` after configuring or signing into a provider in Pi. It reads P
 
 `pibox doctor` performs the same discovery without writing files. Both commands report missing authentication, API-key commands that need manual verification, unsupported URLs, and unknown extension endpoints. Exit status is 0 when all discovered providers have usable offline authentication configuration and endpoint rules, 1 when something needs attention, or 2 for invalid input. Setup writes the endpoints it can discover even when authentication still needs attention.
 
-These checks make no network or model requests, refresh no tokens, execute no API-key commands or extensions, and leave Pi credentials unchanged. They inspect the newer host or sandbox authentication and model files, matching normal sync behavior. Expired OAuth tokens are reported as needing refresh by Pi. Authentication validity and connectivity still need verification when you use the provider.
+These checks make no network or model requests, refresh no tokens, execute no API-key commands or extensions, and leave Pi credentials unchanged. They inspect the newer host or sandbox authentication and model files, matching normal sync behavior. Use `pibox setup --instance NAME` or `pibox doctor --instance NAME` to inspect a named slot; without that flag they inspect the original default state. Expired OAuth tokens are reported as needing refresh by Pi. Authentication validity and connectivity still need verification when you use the provider.
 
 The sandbox does not inherit host API-key environment variables or cloud credential files. Use `/login` inside pibox to store credentials in its Pi state, or configure Pi's `models.json` for the sandbox. For a new provider, run `pibox setup --provider NAME`, launch `pibox --provider NAME`, complete `/login`, and rerun setup. Custom API-key commands and extension providers may need manual configuration. Providers with regional or account-specific URL placeholders need concrete endpoint rules.
 
@@ -188,13 +206,57 @@ Unrestricted mode shares the host network without a proxy. None mode isolates th
 
 ## Pi state
 
-The sandbox uses `~/.pibox/agent`. On synced launches, pibox copies authentication files, model metadata, and keybindings from `~/.pi/agent` when the host copy is newer. Tokens refreshed inside pibox survive later launches. Sessions stay in the pibox directory. Pibox rewrites settings and selected extensions on each synced launch.
+The first sandbox state slot uses `~/.pibox/agent`; other slots have their own agent directories as described below. On synced launches, pibox copies authentication files, model metadata, and keybindings from `~/.pi/agent` when the host copy is newer. Tokens refreshed inside pibox survive later launches in that slot. Sessions stay in that slot's agent directory. Pibox rewrites settings and selected extensions on each synced launch.
 
 Selected extensions and shell commands can read the copied provider credentials. The sandbox can change its copies, but these mounts give it no write access to the host's pi directory. Choose a workspace whose contents you are comfortable letting pi read.
 
-Only one session can use a state directory at a time. Pibox holds a lock during sync, launch, and cleanup. After an abrupt stop, inspect the session's `pibox-*.scope` before removing `active.lock`. If pibox cannot confirm containment cleanup, it keeps the lock and reports the scope name.
+### Run several instances
 
-`pibox status` reports the session for the current `PIBOX_HOME`, including its systemd scope, workspace, start time, network mode, and systemd resource counters and limits. `--json` provides machine-readable output. States are `idle`, `active`, `starting-or-stopping`, `stale`, or `unknown`. A lock without metadata, including locks from older versions, is reported as unknown. Stale means the recorded launcher is gone and its scope is inactive. Status never removes locks or stops processes. Resource values use systemd's native units and sentinel values. Status reports successful inspection with exit code 0, including idle and unknown states.
+You can run several pibox instances in the same workspace, with different access modes. A read-only instance sees changes made by writers but cannot write through its workspace mount.
+
+Pibox reserves the first free persistent state slot. Each slot keeps its own Pi configuration, credentials, sessions, extensions, cache, lock, and systemd resource limits. Slots remain on disk after exit for reuse.
+
+| Slot | Pi state | Cache |
+| --- | --- | --- |
+| `default` | `~/.pibox/agent` | `~/.pibox/cache` |
+| Automatic extra slot | `~/.pibox/instances/auto-N/agent` | `~/.pibox/instances/auto-N/cache` |
+| Named slot | `~/.pibox/instances/NAME/agent` | `~/.pibox/instances/NAME/cache` |
+
+Use `--instance NAME` to reuse a particular slot. `--instance default` selects the original state. If that slot is busy, the launch fails instead of choosing another one.
+
+From two terminals in the same project:
+
+```sh
+# Terminal 1
+pibox --instance writer
+# Terminal 2
+pibox --instance reviewer --read-only
+# Either terminal
+pibox status
+pibox status --instance reviewer --json
+```
+
+Instance names contain 1-64 letters, digits, underscores, or hyphens and start with a letter or digit. They are state-slot names, not workspace names; a slot can be reused for another project. Named instances are useful when continuing a particular Pi conversation or reusing a slot-specific login. A read-only workspace mount is a live view, not a snapshot. Multiple writers can modify the same project, so coordinate edits as you would with other concurrent processes.
+
+New slots copy credentials from host Pi on synced launches. Logins and refreshed tokens stay in the slot that created them. `--no-sync` and exec use the slot as it exists; a new slot starts empty in these modes.
+
+The endpoint catalog and remembered launch selections stay shared under `PIBOX_HOME`. If concurrent launches save selections, the last write wins. Pibox prints the allocated state path at launch.
+
+Pibox holds each slot's lock during sync, launch, and cleanup. After an abrupt stop, inspect the recorded `pibox-*.scope` before removing that slot's `active.lock`. If pibox cannot confirm containment cleanup, it keeps the lock and reports the scope name. Automatic allocation skips locked slots.
+
+### Inspect instances
+
+`pibox status` lists slots under the current `PIBOX_HOME`. It shows systemd scopes, workspaces, start times, network modes, and resource counters and limits. Add `--instance NAME` to inspect one slot. `--json` returns a version 2 report with a `sessions` array.
+
+| State | Meaning |
+| --- | --- |
+| `idle` | No lock exists. |
+| `active` | The recorded systemd scope is active or changing state. |
+| `starting-or-stopping` | The launcher exists, but its scope is inactive. |
+| `stale` | The launcher is gone and its scope is inactive. |
+| `unknown` | Metadata is missing or invalid, or systemd could not be queried. |
+
+Status leaves locks and processes untouched. Resource values use systemd's native units and sentinel values. A completed inspection exits with code 0, including idle and unknown results.
 
 ## Resource limits
 
@@ -210,6 +272,8 @@ Only one session can use a state directory at a time. Pibox holds a lock during 
 | `PIBOX_DISK_QUOTA_ROOT` | unset | Optional quota-limited btrfs subvolume |
 
 Disk monitoring can overshoot and miss open files that have been unlinked. Without a quota root, pibox reports that it has no hard limit on total disk use.
+
+Memory, CPU, task, and monitored disk limits apply separately to each instance. Concurrent instances can therefore use more resources in total than a single instance's limits. Workspace growth monitoring observes changes by other writers too. A configured hard btrfs quota remains a limit on its backing subvolume, which may contain several instances.
 
 For a hard limit, configure a btrfs qgroup with a size limit and set `PIBOX_DISK_QUOTA_ROOT` to its subvolume root. Every writable disk directory must be inside that subvolume. Pibox checks this before launch and refuses to run if the configured quota check fails.
 
@@ -232,6 +296,8 @@ const exitCode = await runPiBox({
 ```
 
 Prepare the state directory yourself or pass a `sync` object with `source`, `settings`, `packages`, and `extensions`. For local models in restricted mode, pass `localEndpoints: ["http://127.0.0.1:11434"]`. Give each concurrent job a separate state directory. Set resource limits through the environment variables listed above.
+
+API callers can pass `instanceRoot` to allocate a free persistent slot automatically, overriding `stateDir` for that launch. Without it, `stateDir` remains explicit and exclusively locked.
 
 For direct access to individual components:
 
