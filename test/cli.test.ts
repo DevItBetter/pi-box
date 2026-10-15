@@ -6,6 +6,27 @@ import { join } from "node:path";
 import test from "node:test";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 
+test("repeated profile flags combine members and reject unknown names", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pibox-compose-"));
+  try {
+    const project = join(dir, "project"); const home = join(dir, "home");
+    mkdirSync(project); mkdirSync(home);
+    writeFileSync(join(dir, "config.json"), JSON.stringify({ ...DEFAULT_CONFIG,
+      endpointProfiles: { first: ["npm", "github"], second: { members: ["github", "pypi"] } },
+      agentProfiles: { first: ["pkg:one"], second: ["pkg:one", "pkg:two"] },
+    }));
+    const run = (...args: string[]) => spawnSync(process.execPath, [new URL("../src/pibox.ts", import.meta.url).pathname, "-C", project, "--print-plan=json", ...args], {
+      env: { ...process.env, HOME: home, PIBOX_HOME: dir, PIBOX_ALLOW: "" }, encoding: "utf8", timeout: 5000,
+    });
+    const result = run("--profile", "first", "--profile", "second", "--agent-profile", "first", "--agent-profile", "second");
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout).selections, { endpoints: ["npm", "github", "pypi"], agent: ["pkg:one", "pkg:two"] });
+    assert.equal(run("--profile", "first", "--profile", "missing").status, 2);
+    assert.equal(run("--agent-profile", "first", "--agent-profile", "missing").status, 2);
+    assert.deepEqual(JSON.parse(run("--bare", "--agent-profile", "first").stdout).selections.agent, []);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("JSON preview reports actual no-sync state and guest arguments without changing selections", () => {
   const dir = mkdtempSync(join(tmpdir(), "pibox-plan-"));
   try {

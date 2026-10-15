@@ -42,9 +42,9 @@ let noTui = false;
 let saveDefaults = false;
 let readOnly = false;
 let networkMode: "restricted" | "unrestricted" | "none" = "restricted";
-let egressProfile: string | undefined;
+const egressProfiles: string[] = [];
 let agentBare = false;
-let agentProfile: string | undefined;
+const agentProfiles: string[] = [];
 let maintenance: "setup" | "doctor" | undefined;
 let listProfiles = false;
 const extraAllow: string[] = [];
@@ -110,10 +110,10 @@ for (let i = 0; i < argv.length; i++) {
       agentBare = true;
       break;
     case "--profile":
-      egressProfile = argv[++i] ?? fail("--profile needs a name");
+      egressProfiles.push(argv[++i] ?? fail("--profile needs a name"));
       break;
     case "--agent-profile":
-      agentProfile = argv[++i] ?? fail("--agent-profile needs a name");
+      agentProfiles.push(argv[++i] ?? fail("--agent-profile needs a name"));
       break;
     case "-C":
       workspace = resolve(argv[++i] ?? fail("-C needs a directory"));
@@ -150,7 +150,8 @@ for (let i = 0; i < argv.length; i++) {
           "Provider endpoints + selected extras + --allow form the restricted allowlist.\n" +
           "Endpoint options have no effect in unrestricted or none mode.\n" +
           "--profile selects extra endpoints and skips their picker; an empty profile permits only the provider.\n" +
-          "--agent-profile selects capabilities. --no-sync also skips\n" +
+           "Repeat --profile or --agent-profile to combine members.\n" +
+           "--agent-profile selects capabilities. --no-sync also skips\n" +
           "re-applying the agent selection to the synced config copy.\n" +
           "Env: PIBOX_MEMORY (4G), PIBOX_CPU_QUOTA (300%), PIBOX_HOME (~/.pibox), PIBOX_ALLOW (csv).\n" +
           "Everything unrecognized is passed to pi. See README.md. Use --read-only for a read-only workspace; -- separates pi arguments.",
@@ -236,7 +237,7 @@ function fromProfile(name: string, profiles: SelectionProfiles, what: string): S
 
 async function resolveSelection(
   none: boolean,
-  profile: string | undefined,
+  requestedProfiles: string[],
   profiles: SelectionProfiles,
   items: PickerItem[],
   last: string[],
@@ -245,9 +246,9 @@ async function resolveSelection(
   what: string,
 ): Promise<Set<string>> {
   if (none) return new Set();
-  if (profile !== undefined) return fromProfile(profile, profiles, what);
+  if (requestedProfiles.length) return new Set(requestedProfiles.flatMap((name) => [...fromProfile(name, profiles, what)]));
   const remembered = new Set(last.filter((k) => items.some((i) => i.key === k)));
-   if (noTui || !process.stdin.isTTY) return remembered;
+  if (noTui || !process.stdin.isTTY) return remembered;
   const picked = await pickItems({ title, noneLabel, items, profiles, emptyLabel: what === "endpoint" ? "provider only" : "bare" }, remembered);
   if (picked === null) {
     console.error("pibox: aborted");
@@ -263,7 +264,7 @@ const endpointItems: PickerItem[] = Object.entries(config.endpoints).map(([key, 
 const provider = providerForArgs(piArgs, String(hostSettings.defaultProvider ?? config.defaultProvider), config.providerEndpoints);
 const egressSel = networkMode === "restricted" ? await resolveSelection(
   false,
-  egressProfile,
+  egressProfiles,
   config.endpointProfiles,
   endpointItems,
   state.endpoints,
@@ -273,7 +274,7 @@ const egressSel = networkMode === "restricted" ? await resolveSelection(
 ) : new Set<string>();
 const agentSel = await resolveSelection(
   agentBare,
-  agentProfile,
+  agentProfiles,
   config.agentProfiles,
   agentItems,
   state.agent,
