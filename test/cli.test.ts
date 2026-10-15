@@ -6,6 +6,23 @@ import { join } from "node:path";
 import test from "node:test";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 
+test("exec requires an argv delimiter and previews exact arguments", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pibox-exec-"));
+  try {
+    const project = join(dir, "project"); mkdirSync(project);
+    const run = (...args: string[]) => spawnSync(process.execPath, [new URL("../src/pibox.ts", import.meta.url).pathname, "exec", "-C", project, ...args], {
+      env: { ...process.env, PIBOX_HOME: dir }, encoding: "utf8", timeout: 5000,
+    });
+    assert.equal(run().status, 2);
+    assert.equal(run("echo", "hello").status, 2);
+    assert.equal(run("--bare", "--", "echo").status, 2);
+    const result = run("--network", "none", "--print-plan=json", "--", "printf", "%s", "a b", "", "--profile");
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout).command, ["printf", "%s", "a b", "", "--profile"]);
+    assert.equal(JSON.parse(result.stdout).sync, false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("repeated profile flags combine members and reject unknown names", () => {
   const dir = mkdtempSync(join(tmpdir(), "pibox-compose-"));
   try {

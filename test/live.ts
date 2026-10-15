@@ -31,6 +31,17 @@ try {
   const version = run(["--", "--version"]);
   assert.equal(version.status, 0, version.stderr);
   assert.match(version.stdout, /1\.1\.0/);
+  for (const mode of ["none", "restricted", "unrestricted"]) {
+    const args = ["exec", "-C", workspace, "--network", mode, "--provider", "openai", "--"];
+    const exec = (command: string[]) => spawnSync(join(root, "bin/pibox"), [...args, ...command], {
+      env: { ...process.env, PIBOX_HOME: join(dir, "state") }, encoding: "utf8", timeout: 20000,
+    });
+    const exact = exec(["/bin/bash", "-c", 'test "$PWD" = /workspace && printf "<%s>" "$@"', "arg0", "a b", "", "$(touch /workspace/not-executed)"]);
+    assert.equal(exact.status, 0, exact.stderr);
+    assert.equal(exact.stdout, "<a b><><$(touch /workspace/not-executed)>");
+    assert.equal(exec(["/bin/bash", "-c", "exit 37"]).status, 37);
+    assert.equal(exec(["/bin/bash", "-c", "kill -TERM $$"]).status, 143);
+  }
   // script supplies a controlling PTY. Changing its size must reach the guest
   // even though bubblewrap starts a separate session with --new-session.
   const resizeConfig = join(dir, "resize-config.json");

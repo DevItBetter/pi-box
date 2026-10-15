@@ -47,6 +47,8 @@ let agentBare = false;
 const agentProfiles: string[] = [];
 let maintenance: "setup" | "doctor" | undefined;
 let listProfiles = false;
+let execMode = false;
+let command: string[] | undefined;
 const extraAllow: string[] = [];
 if (process.env["PIBOX_ALLOW"] !== undefined && process.env["PIBOX_ALLOW"] !== "") {
   extraAllow.push(...process.env["PIBOX_ALLOW"].split(",").map((h) => h.trim()));
@@ -61,12 +63,20 @@ if (argv[commandIndex] === "setup" || argv[commandIndex] === "doctor") {
 } else if (argv[commandIndex] === "profiles") {
   listProfiles = true;
   argv.splice(commandIndex, 1);
+} else if (argv[commandIndex] === "exec") {
+  execMode = true;
+  noTui = true;
+  sync = false;
+  argv.splice(commandIndex, 1);
 }
 for (let i = 0; i < argv.length; i++) {
   const arg = argv[i]!;
   switch (arg) {
     case "--config":
       configPath = resolve(argv[++i] ?? fail("--config needs a file"));
+      break;
+    case "--provider":
+      piArgs.push(arg, argv[++i] ?? fail("--provider needs a name"));
       break;
     case "--network": {
       const mode = argv[++i];
@@ -78,7 +88,8 @@ for (let i = 0; i < argv.length; i++) {
       readOnly = true;
       break;
     case "--":
-      piArgs.push(...argv.slice(i + 1));
+      if (execMode) command = argv.slice(i + 1);
+      else piArgs.push(...argv.slice(i + 1));
       i = argv.length;
       break;
     case "--shell":
@@ -128,7 +139,8 @@ for (let i = 0; i < argv.length; i++) {
           "             [--network MODE] [--profile NAME] [--bare | --agent-profile NAME]\n" +
            "             [--print-plan] [pi args...]\n\n" +
             "       pibox setup|doctor [--config FILE] [--provider NAME]\n" +
-            "       pibox profiles [--config FILE]\n" +
+             "       pibox profiles [--config FILE]\n" +
+             "       pibox exec [pibox options] -- COMMAND [ARG...]\n" +
            "  setup           Discover Pi providers and add their egress endpoints.\n" +
            "  doctor          Check provider authentication and egress config without writing.\n\n" +
           "Personal pi agent inside bubblewrap. Workspace = cwd (or -C dir).\n" +
@@ -159,8 +171,14 @@ for (let i = 0; i < argv.length; i++) {
       process.exit(0);
       break;
     default:
+      if (execMode) fail(`unknown exec option ${arg}; put the command after --`);
       piArgs.push(arg);
   }
+}
+
+if (execMode) {
+  if (!command?.length || !command[0]) fail("exec needs a command after --");
+  if (runShell || saveDefaults || agentProfiles.length || agentBare) fail("exec cannot be combined with --shell, --save-defaults, --bare, or --agent-profile");
 }
 
 if (maintenance) {
@@ -273,7 +291,7 @@ const egressSel = networkMode === "restricted" ? await resolveSelection(
   "endpoint",
 ) : new Set<string>();
 const agentSel = await resolveSelection(
-  agentBare,
+  agentBare || execMode,
   agentProfiles,
   config.agentProfiles,
   agentItems,
@@ -314,7 +332,7 @@ if (printPlan) {
     stateDir: piboxAgentDir, configPath, sync,
     selections: { endpoints: [...egressSel], agent: [...agentSel] },
     agent: { packages: settings.packages ?? [], extensions: extensions.map((file) => `/home/sandbox/.pi/agent/extensions/${file}`), builtinExtensions: ["/opt/pibox/status-extension.ts"] },
-    command: sandboxCommand(node, settings, extensions, runShell, piArgs),
+    command: sandboxCommand(node, settings, extensions, runShell, piArgs, command),
     resources: launchResources(),
     diskQuotaRoot: process.env["PIBOX_DISK_QUOTA_ROOT"] ?? null,
   };
@@ -333,9 +351,10 @@ if (printPlan) {
   process.exit(0);
 }
 
-writeJsonAtomic(statePath, { endpoints: networkMode === "restricted" ? [...egressSel] : state.endpoints, agent: [...agentSel] });
+if (!execMode) writeJsonAtomic(statePath, { endpoints: networkMode === "restricted" ? [...egressSel] : state.endpoints, agent: [...agentSel] });
 process.exitCode = await runPiBox({
   workspace, stateDir: piboxAgentDir, readOnly, allow, localEndpoints, runShell, piArgs, networkMode, provider,
+  ...(command ? { command } : {}),
   ...(sync ? { sync: {
     source: piAgentDir, settings: { ...hostSettings, defaultProvider: provider },
     packages: pkgItems.filter((p) => agentSel.has(p.key)).map((p) => p.spec),

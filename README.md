@@ -54,6 +54,7 @@ pibox --config /path/to/config.json     # read endpoint settings from another fi
 pibox --allow api.example.com          # add an HTTPS host in restricted mode
 pibox --read-only                      # read-only project
 pibox --shell                          # run bash inside the sandbox
+pibox exec -- npm test                 # execute a command directly, without pickers or sync
 pibox --print-plan                     # show selections without syncing or launching
 pibox --print-plan=json                # machine-readable launch plan, without prompts
 pibox --no-sync                        # reuse the sandbox's existing pi configuration
@@ -61,6 +62,8 @@ pibox --bare -- -p "Review this project"
 ```
 
 `--bare` skips the package and extension picker and disables those optional additions. Pi's built-in tools remain available. This flag does not change network access.
+
+`pibox exec [options] -- COMMAND ARG...` runs an argv directly at `/workspace` and returns its exit status. Arguments keep their boundaries; shell syntax requires an explicit shell, such as `pibox exec -- /bin/bash -c 'echo hello'`. Exec uses remembered or explicit endpoint selections without prompting, reuses existing sandbox state without syncing, and leaves remembered selections unchanged. It uses the same state lock, filesystem isolation, network rules, and resource limits as Pi. `--shell`, `--bare`, `--agent-profile`, and `--save-defaults` do not apply to exec. Use `--provider NAME` to select the restricted provider endpoints.
 
 Unknown arguments go to pi. Use `--` to pass arguments such as pi's own `--help`. With `--no-sync`, pibox reuses its existing pi configuration. Package and extension selections take effect when you next launch with sync enabled.
 

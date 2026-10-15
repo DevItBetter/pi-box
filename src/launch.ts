@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { constants, homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertCacheUnderCeiling, bwrapAvailable, diskLimitsOf, openBwrapFds, sandboxDiskBounds, sandboxTool, startDiskWatch, type BwrapSandboxSpec } from "./sandbox/bwrap.ts";
@@ -21,6 +21,8 @@ export interface LaunchOptions {
   piArgs: string[];
   networkMode?: "restricted" | "unrestricted" | "none";
   provider?: string;
+  /** Execute an argv directly instead of Pi or an interactive shell. */
+  command?: string[];
 }
 
 export function validateWorkspace(input: string): string {
@@ -50,7 +52,11 @@ export class ContainmentCleanupError extends Error {}
 
 export interface AgentLaunchSettings { packages?: PackageSpec[]; defaultProvider?: string; }
 
-export function sandboxCommand(node: string, settings: AgentLaunchSettings, extensions: string[], runShell: boolean, piArgs: string[]): string[] {
+export function sandboxCommand(node: string, settings: AgentLaunchSettings, extensions: string[], runShell: boolean, piArgs: string[], command?: string[]): string[] {
+  if (command) {
+    if (!command.length || !command[0]) throw new Error("sandbox command must not be empty");
+    return [...command];
+  }
   if (runShell) return ["/bin/bash", "--noprofile", "--norc"];
   const args = ["--offline", "--no-approve", "--no-mcp", "-e", "/opt/pibox/status-extension.ts"];
   if (!settings.packages?.length) {
@@ -149,7 +155,7 @@ export async function launchSandbox(opts: LaunchOptions): Promise<number> {
       caps: { memoryMax: resources.memoryMax, cpuQuota: resources.cpuQuota },
       tasksMax: resources.tasksMax,
       cmd: [...(networkMode === "restricted" ? [node.guestPath, "/opt/pibox/egress-forwarder.mjs", "/proxy/egress.sock", "18080", "/proxy/local.json", "--"] : []),
-        ...sandboxCommand(node.guestPath, settings, extensions, opts.runShell, opts.piArgs)],
+        ...sandboxCommand(node.guestPath, settings, extensions, opts.runShell, opts.piArgs, opts.command)],
     };
     if (!process.env["PIBOX_DISK_QUOTA_ROOT"]) console.error("pibox: disk growth is monitored; no hard aggregate disk quota is configured.");
     const watch = await startDiskWatch(sandboxDiskBounds(spec, limits));
@@ -174,7 +180,7 @@ export async function launchSandbox(opts: LaunchOptions): Promise<number> {
       try {
         code = await new Promise<number>((resolve, reject) => {
           child.once("error", reject);
-          child.once("close", (status, signal) => resolve(status ?? (signal ? 128 + 9 : 1)));
+          child.once("close", (status, signal) => resolve(status ?? (signal ? 128 + constants.signals[signal] : 1)));
         });
       } finally {
         process.off("SIGWINCH", resize);

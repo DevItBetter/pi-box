@@ -15,6 +15,7 @@
 import { spawn } from "node:child_process";
 import { connect, createServer } from "node:net";
 import { readFileSync } from "node:fs";
+import { constants } from "node:os";
 
 const sep = process.argv.indexOf("--");
 const [socketPath, portArg, localConfig] = process.argv.slice(2, sep);
@@ -60,6 +61,6 @@ server.listen(Number(portArg), "127.0.0.1", () => {
   });
   child.on("exit", (code, signal) => {
     server.close();
-    process.exit(signal !== null ? 128 + 15 : (code ?? 1));
+    process.exit(signal !== null ? 128 + constants.signals[signal] : (code ?? 1));
   });
 });
