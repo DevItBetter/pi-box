@@ -44,12 +44,15 @@ export function pickItems(spec: PickerSpec, preselected: ReadonlySet<string>): P
     8,
   );
   let cursor = 0;
-  let painted = 0;
+  let firstVisible = 0;
 
   const box = (on: boolean, partial = false): string => (partial ? "[~]" : on ? "[x]" : "[ ]");
   const lines = (): string[] => {
+    const visibleRows = Math.max(1, (process.stderr.rows || 24) - 4);
+    firstVisible = Math.min(firstVisible, cursor);
+    firstVisible = Math.max(firstVisible, cursor - visibleRows + 1);
     const out = [spec.title, ""];
-    for (let i = 0; i < rows.length; i++) {
+    for (let i = firstVisible; i < Math.min(rows.length, firstVisible + visibleRows); i++) {
       const row = rows[i]!;
       const cur = i === cursor ? "\x1b[7m" : "";
       const end = i === cursor ? "\x1b[0m" : "";
@@ -69,9 +72,7 @@ export function pickItems(spec: PickerSpec, preselected: ReadonlySet<string>): P
 
   const paint = (): void => {
     const out = lines();
-    const up = painted > 0 ? `\x1b[${painted}A` : "";
-    process.stderr.write(`${up}${out.map((l) => `\x1b[2K${l}`).join("\n")}\n`);
-    painted = out.length;
+    process.stderr.write(`\x1b[H\x1b[J${out.join("\r\n")}`);
   };
 
   const toggle = (): void => {
@@ -90,12 +91,15 @@ export function pickItems(spec: PickerSpec, preselected: ReadonlySet<string>): P
     const stdin = process.stdin;
     stdin.setRawMode(true);
     stdin.resume();
-    process.stderr.write("\x1b[?25l"); // hide cursor
+    // Use a separate screen and clip long rows instead of wrapping them.
+    process.stderr.write("\x1b[?1049h\x1b[?7l\x1b[?25l");
+    process.stderr.on("resize", paint);
     const done = (result: Set<string> | null): void => {
       stdin.setRawMode(false);
       stdin.pause();
       stdin.off("data", onKey);
-      process.stderr.write("\x1b[?25h");
+      process.stderr.off("resize", paint);
+      process.stderr.write("\x1b[?7h\x1b[?25h\x1b[?1049l");
       resolve(result);
     };
     const onKey = (chunk: Buffer): void => {
