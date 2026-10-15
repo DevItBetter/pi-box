@@ -40,6 +40,7 @@ Give your agent this instruction:
 ```sh
 pibox setup                            # discover providers and configure their egress endpoints
 pibox doctor                           # report authentication and endpoint problems
+pibox profiles                         # list endpoint groups and selection profiles
 pibox -C ~/dev/project                 # choose extra endpoints, packages, and extensions
 pibox --bare                           # built-in pi tools, no optional packages or extensions
 pibox --no-tui                         # reuse remembered selections without prompts

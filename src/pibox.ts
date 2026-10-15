@@ -43,6 +43,7 @@ let egressProfile: string | undefined;
 let agentBare = false;
 let agentProfile: string | undefined;
 let maintenance: "setup" | "doctor" | undefined;
+let listProfiles = false;
 const extraAllow: string[] = [];
 if (process.env["PIBOX_ALLOW"] !== undefined && process.env["PIBOX_ALLOW"] !== "") {
   extraAllow.push(...process.env["PIBOX_ALLOW"].split(",").map((h) => h.trim()));
@@ -54,6 +55,9 @@ const argv = process.argv.slice(2);
 const commandIndex = argv[0] === "-C" ? 2 : 0;
 if (argv[commandIndex] === "setup" || argv[commandIndex] === "doctor") {
   maintenance = argv.splice(commandIndex, 1)[0] as "setup" | "doctor";
+} else if (argv[commandIndex] === "profiles") {
+  listProfiles = true;
+  argv.splice(commandIndex, 1);
 }
 for (let i = 0; i < argv.length; i++) {
   const arg = argv[i]!;
@@ -112,7 +116,8 @@ for (let i = 0; i < argv.length; i++) {
         "usage: pibox [--shell] [--no-sync] [-C dir] [--allow HOST]...\n" +
           "             [--network MODE] [--profile NAME] [--bare | --agent-profile NAME]\n" +
            "             [--print-plan] [pi args...]\n\n" +
-           "       pibox setup|doctor [--config FILE] [--provider NAME]\n" +
+            "       pibox setup|doctor [--config FILE] [--provider NAME]\n" +
+            "       pibox profiles [--config FILE]\n" +
            "  setup           Discover Pi providers and add their egress endpoints.\n" +
            "  doctor          Check provider authentication and egress config without writing.\n\n" +
           "Personal pi agent inside bubblewrap. Workspace = cwd (or -C dir).\n" +
@@ -152,7 +157,7 @@ if (maintenance) {
   process.exit(process.exitCode ?? 0);
 }
 
-workspace = validateWorkspace(workspace);
+if (!listProfiles) workspace = validateWorkspace(workspace);
 // ---- catalogs --------------------------------------------------------------
 
 mkdirSync(piboxHome, { recursive: true });
@@ -167,6 +172,18 @@ config.providerEndpoints ??= DEFAULT_CONFIG.providerEndpoints;
 config.endpoints ??= {};
 config.endpointProfiles ??= {};
 config.agentProfiles ??= {};
+if (listProfiles) {
+  for (const [title, entries] of [
+    ["Endpoint groups", config.endpoints],
+    ["Endpoint profiles", config.endpointProfiles],
+    ["Capability profiles", config.agentProfiles],
+  ] as const) {
+    console.log(`${title}:`);
+    for (const [name, members] of Object.entries(entries)) console.log(`  ${name}: ${members.join(", ") || "(empty)"}`);
+    if (!Object.keys(entries).length) console.log("  (none)");
+  }
+  process.exit(0);
+}
 const state: PiboxState = { endpoints: [], agent: [], ...readJson<Partial<PiboxState>>(statePath) };
 
 // Agent capability catalog, discovered from the HOST's pi config: packages
