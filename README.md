@@ -159,6 +159,8 @@ Endpoint and capability profiles accept a member array or an object with a label
 
 Selected extensions must be regular `.ts` or `.js` files. Pi ignores project-local resources by default.
 
+Pibox includes a built-in Pi UI extension, including in bare mode. It shows the launch network mode, workspace access, and provider in the footer. Use `/pibox` inside Pi to inspect the launch allowlist, local provider endpoints, and enabled capabilities. These details describe the launch configuration; they do not verify connectivity or track later provider changes.
+
 ## Sandbox boundary
 
 Pi, its packages, extensions, and commands run inside bubblewrap. The sandbox shares the host kernel and runs as the invoking user. Bubblewrap creates separate user, PID, IPC, UTS, cgroup, and mount namespaces. Pibox drops capabilities and applies a seccomp filter. If required containment is unavailable, the launcher refuses to run.

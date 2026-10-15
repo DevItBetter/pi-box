@@ -300,7 +300,7 @@ if (printPlan) {
 
 writeFileSync(statePath, `${JSON.stringify({ endpoints: networkMode === "restricted" ? [...egressSel] : state.endpoints, agent: [...agentSel] }, null, 2)}\n`);
 process.exitCode = await runPiBox({
-  workspace, stateDir: piboxAgentDir, readOnly, allow, localEndpoints, runShell, piArgs, networkMode,
+  workspace, stateDir: piboxAgentDir, readOnly, allow, localEndpoints, runShell, piArgs, networkMode, provider,
   ...(sync ? { sync: {
     source: piAgentDir, settings: { ...hostSettings, defaultProvider: provider },
     packages: pkgItems.filter((p) => agentSel.has(p.key)).map((p) => p.spec),

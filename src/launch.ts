@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 import { assertCacheUnderCeiling, bwrapAvailable, diskLimitsOf, openBwrapFds, sandboxDiskBounds, sandboxTool, startDiskWatch, type BwrapSandboxSpec } from "./sandbox/bwrap.ts";
 import { startEgressProxy, type EgressProxy } from "./sandbox/egress-proxy.ts";
 import { parseLocalEndpoints, startLocalRelay } from "./sandbox/local-relay.ts";
+import { providerForArgs } from "./config.ts";
+import { packageSource, type PackageSpec } from "./state.ts";
+import type { SandboxStatus } from "./sandbox/status-extension.ts";
 
 export interface LaunchOptions {
   workspace: string;
@@ -17,6 +20,7 @@ export interface LaunchOptions {
   runShell: boolean;
   piArgs: string[];
   networkMode?: "restricted" | "unrestricted" | "none";
+  provider?: string;
 }
 
 export function validateWorkspace(input: string): string {
@@ -68,13 +72,20 @@ export async function launchSandbox(opts: LaunchOptions): Promise<number> {
   const overlaps = (a: string, b: string): boolean => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
   if (overlaps(cache, workspace) || overlaps(cache, stateDir)) throw new Error("cache, state, and workspace must be separate directories");
   const settingsFile = join(stateDir, "settings.json");
-  const settings = existsSync(settingsFile) ? JSON.parse(readFileSync(settingsFile, "utf8")) as { packages?: unknown[] } : {};
+  const settings = existsSync(settingsFile) ? JSON.parse(readFileSync(settingsFile, "utf8")) as { packages?: PackageSpec[]; defaultProvider?: string } : {};
   const extensions = existsSync(join(stateDir, "extensions")) ? readdirSync(join(stateDir, "extensions")).filter((f) => /\.(ts|js)$/.test(f)) : [];
-  const agentArgs = ["--no-approve", "--no-mcp"];
+  const agentArgs = ["--no-approve", "--no-mcp", "-e", "/opt/pibox/status-extension.ts"];
   if (!(settings.packages?.length)) {
     agentArgs.push("--no-extensions");
     for (const file of extensions) agentArgs.push("-e", `/home/sandbox/.pi/agent/extensions/${file}`);
   }
+  const status: SandboxStatus = {
+    network: networkMode, workspace: opts.readOnly ? "read-only" : "read-write",
+    provider: opts.provider ?? providerForArgs(opts.piArgs, settings.defaultProvider ?? "unknown", {}),
+    hosts: networkMode === "restricted" ? opts.allow : [],
+    localEndpoints: networkMode === "restricted" ? opts.localEndpoints ?? [] : [],
+    capabilities: [...(settings.packages ?? []).map(packageSource), ...extensions],
+  };
   const limits = diskLimitsOf({
     fileMax: process.env["PIBOX_FILE_MAX"] ?? "4G",
     cacheMax: process.env["PIBOX_CACHE_MAX"] ?? "4G",
@@ -99,6 +110,7 @@ export async function launchSandbox(opts: LaunchOptions): Promise<number> {
       TERM: process.env["TERM"] ?? "xterm-256color",
       COLORTERM: process.env["COLORTERM"] ?? "",
       PI_CODING_AGENT_DIR: "/home/sandbox/.pi/agent",
+      PIBOX_STATUS: JSON.stringify(status),
       ...(networkMode === "restricted" ? {
         HTTPS_PROXY: "http://127.0.0.1:18080",
         HTTP_PROXY: "http://127.0.0.1:18080",
@@ -115,6 +127,7 @@ export async function launchSandbox(opts: LaunchOptions): Promise<number> {
       rwMounts: [{ hostPath: stateDir, guestPath: "/home/sandbox/.pi/agent" }],
       roMounts: [...node.roMounts,
         { hostPath: modules, guestPath: "/opt/pi-modules" },
+        { hostPath: fileURLToPath(new URL(import.meta.url.endsWith(".ts") ? "./sandbox/status-extension.ts" : "./sandbox/status-extension.js", import.meta.url)), guestPath: "/opt/pibox/status-extension.ts" },
         { hostPath: fileURLToPath(new URL("./sandbox/egress-forwarder.mjs", import.meta.url)), guestPath: "/opt/pibox/egress-forwarder.mjs" }],
       env, ...limits,
       caps: { memoryMax: process.env["PIBOX_MEMORY"] ?? "4G", cpuQuota: process.env["PIBOX_CPU_QUOTA"] ?? "300%" },
