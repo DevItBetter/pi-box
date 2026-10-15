@@ -36,6 +36,7 @@ let workspace = process.cwd();
 let runShell = false;
 let sync = true;
 let printPlan = false;
+let noTui = false;
 let readOnly = false;
 let networkMode: "restricted" | "unrestricted" | "none" = "restricted";
 let egressProfile: string | undefined;
@@ -82,6 +83,9 @@ for (let i = 0; i < argv.length; i++) {
     case "--print-plan":
       printPlan = true;
       break;
+    case "--no-tui":
+      noTui = true;
+      break;
     case "--none":
     case "--provider-only":
     case "--allow-only":
@@ -115,7 +119,8 @@ for (let i = 0; i < argv.length; i++) {
           "  --network MODE  restricted (default): enforce the allowed-host list.\n" +
           "                  unrestricted: host network, no endpoint restrictions.\n" +
           "                  none: no network, including provider services.\n" +
-          "  --config FILE   Endpoint catalog and provider-specific host sets.\n" +
+           "  --config FILE   Endpoint catalog and provider-specific host sets.\n" +
+           "  --no-tui        Use remembered selections without prompting.\n" +
           "  --provider NAME Select the LLM integration; its endpoint set applies in restricted mode.\n" +
           "                  Config entries may include explicit loopback URLs for local models.\n" +
           "Extra endpoints and agent capabilities are picked in a TUI at launch\n" +
@@ -208,7 +213,7 @@ async function resolveSelection(
   if (none) return new Set();
   if (profile !== undefined) return fromProfile(profile, profiles, what);
   const remembered = new Set(last.filter((k) => items.some((i) => i.key === k)));
-  if (!process.stdin.isTTY) return remembered; // non-interactive: last selection
+   if (noTui || !process.stdin.isTTY) return remembered;
   const picked = await pickItems({ title, noneLabel, items, profiles, emptyLabel: what === "endpoint" ? "provider only" : "bare" }, remembered);
   if (picked === null) {
     console.error("pibox: aborted");

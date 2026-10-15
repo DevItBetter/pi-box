@@ -42,6 +42,7 @@ pibox setup                            # discover providers and configure their 
 pibox doctor                           # report authentication and endpoint problems
 pibox -C ~/dev/project                 # choose extra endpoints, packages, and extensions
 pibox --bare                           # built-in pi tools, no optional packages or extensions
+pibox --no-tui                         # reuse remembered selections without prompts
 pibox --profile node-dev               # allow the hosts in an endpoint profile
 pibox --agent-profile research         # enable packages and extensions from a profile
 pibox --network restricted             # enforce the allowlist; this is the default
