@@ -37,6 +37,7 @@ let runShell = false;
 let sync = true;
 let printPlan = false;
 let noTui = false;
+let saveDefaults = false;
 let readOnly = false;
 let networkMode: "restricted" | "unrestricted" | "none" = "restricted";
 let egressProfile: string | undefined;
@@ -90,6 +91,9 @@ for (let i = 0; i < argv.length; i++) {
     case "--no-tui":
       noTui = true;
       break;
+    case "--save-defaults":
+      saveDefaults = true;
+      break;
     case "--none":
     case "--provider-only":
     case "--allow-only":
@@ -126,6 +130,7 @@ for (let i = 0; i < argv.length; i++) {
           "                  none: no network, including provider services.\n" +
            "  --config FILE   Endpoint catalog and provider-specific host sets.\n" +
            "  --no-tui        Use remembered selections without prompting.\n" +
+           "  --save-defaults Save selected endpoints and capabilities as defaults, then exit.\n" +
           "  --provider NAME Select the LLM integration; its endpoint set applies in restricted mode.\n" +
           "                  Config entries may include explicit loopback URLs for local models.\n" +
           "Extra endpoints and agent capabilities are picked in a TUI at launch\n" +
@@ -188,7 +193,7 @@ if (listProfiles) {
   }
   process.exit(0);
 }
-const state: PiboxState = { endpoints: [], agent: [], ...readJson<Partial<PiboxState>>(statePath) };
+const state: PiboxState = { endpoints: [], agent: [], ...config.defaultSelections, ...readJson<Partial<PiboxState>>(statePath) };
 
 // Agent capability catalog, discovered from the HOST's pi config: packages
 // from settings.json (key = last path segment), extensions from extensions/.
@@ -271,6 +276,14 @@ const agentSel = await resolveSelection(
 
 const allow = networkMode === "restricted" ? restrictedHosts(config, provider, [...egressSel], extraAllow) : [];
 const localEndpoints = networkMode === "restricted" ? localProviderEndpoints(config, provider) : [];
+
+if (saveDefaults) {
+  if (printPlan) fail("--save-defaults cannot be combined with --print-plan");
+  config.defaultSelections = { endpoints: networkMode === "restricted" ? [...egressSel] : state.endpoints, agent: [...agentSel] };
+  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  console.error(`pibox: saved default selections to ${configPath}`);
+  process.exit(0);
+}
 
 const planLines = [
   `network = ${networkMode}; egress = ${networkMode !== "restricted" ? "endpoint sets inactive" : `${provider} endpoints`}${egressSel.size > 0 ? ` + ${[...egressSel].join(", ")}` : ""}${networkMode === "restricted" && extraAllow.length > 0 ? ` + --allow ${extraAllow.join(", ")}` : ""}`,

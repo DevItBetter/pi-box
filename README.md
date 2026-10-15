@@ -41,6 +41,7 @@ Give your agent this instruction:
 pibox setup                            # discover providers and configure their egress endpoints
 pibox doctor                           # report authentication and endpoint problems
 pibox profiles                         # list endpoint groups and selection profiles
+pibox --save-defaults                  # choose default selections and exit
 pibox -C ~/dev/project                 # choose extra endpoints, packages, and extensions
 pibox --bare                           # built-in pi tools, no optional packages or extensions
 pibox --no-tui                         # reuse remembered selections without prompts
@@ -63,6 +64,8 @@ pibox --bare -- -p "Review this project"
 Unknown arguments go to pi. Use `--` to pass arguments such as pi's own `--help`. With `--no-sync`, pibox reuses its existing pi configuration. Package and extension selections take effect when you next launch with sync enabled.
 
 The launch pickers show extra endpoints and your global pi packages and extensions. Use arrow keys or `j`/`k` to move, Space to toggle, `a` to select all, `n` to clear, Enter to confirm, and `q` to cancel. On the first launch, all extras are off. Pibox saves your choices in `~/.pibox/state.json` and reuses them for noninteractive launches.
+
+Optional `defaultSelections` in the config contains `endpoints` and `agent` arrays. Defaults apply only when the corresponding remembered selection is absent. Remembered empty arrays stay empty. Explicit profiles and `--bare` take precedence. `--save-defaults` saves the resolved selections to the chosen config and exits without launching or changing remembered selections. Combine it with `--no-tui` or explicit profiles to skip prompts. It cannot be combined with `--print-plan`.
 
 ## Networking
 

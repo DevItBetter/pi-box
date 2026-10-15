@@ -21,6 +21,7 @@ export interface PiboxConfig {
   endpoints: Record<string, string[]>;
   endpointProfiles: SelectionProfiles;
   agentProfiles: SelectionProfiles;
+  defaultSelections?: { endpoints?: string[]; agent?: string[] };
 }
 
 export const DEFAULT_CONFIG: PiboxConfig = {

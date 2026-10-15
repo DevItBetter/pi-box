@@ -1,10 +1,31 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { DEFAULT_CONFIG } from "../src/config.ts";
+
+test("defaults fill absent selections, preserve empty state, and save without launching", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pibox-defaults-"));
+  try {
+    const project = join(dir, "project"); const home = join(dir, "home");
+    mkdirSync(project); mkdirSync(home);
+    const configPath = join(dir, "config.json");
+    writeFileSync(configPath, JSON.stringify({ ...DEFAULT_CONFIG, defaultSelections: { endpoints: ["github"], agent: [] } }));
+    const run = (...args: string[]) => spawnSync(process.execPath, [new URL("../src/pibox.ts", import.meta.url).pathname, "-C", project, "--no-tui", ...args], {
+      env: { ...process.env, HOME: home, PIBOX_HOME: dir, PIBOX_ALLOW: "" }, encoding: "utf8", timeout: 5000,
+    });
+    assert.match(run("--print-plan").stderr, /egress = openai endpoints \+ github/);
+    writeFileSync(join(dir, "state.json"), JSON.stringify({ endpoints: [], agent: [] }));
+    assert.doesNotMatch(run("--print-plan").stderr, /\+ github/);
+    const saved = run("--profile", "node-dev", "--save-defaults");
+    assert.equal(saved.status, 0, saved.stderr);
+    assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")).defaultSelections, { endpoints: ["npm", "github"], agent: [] });
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "state.json"), "utf8")), { endpoints: [], agent: [] });
+    assert.equal(run("--save-defaults", "--print-plan").status, 2);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
 
 test("profiles lists catalog members without validating the workspace or loading Pi state", () => {
   const dir = mkdtempSync(join(tmpdir(), "pibox-profiles-"));
