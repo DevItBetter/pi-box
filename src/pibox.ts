@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { launchResources, sandboxCommand, validateWorkspace, type AgentLaunchSettings } from "./launch.ts";
 import { sandboxTool } from "./sandbox/bwrap.ts";
 import { runPiBox } from "./index.ts";
-import { packageSource, type PackageSpec } from "./state.ts";
+import { packageSource, writeJsonAtomic, type PackageSpec } from "./state.ts";
 import { pickItems, type PickerItem } from "./picker.ts";
 
 import { DEFAULT_CONFIG, localProviderEndpoints, profileDescription, profileLabel, profileMembers, providerForArgs, restrictedHosts, type PiboxConfig, type SelectionProfiles } from "./config.ts";
@@ -288,7 +288,7 @@ const localEndpoints = networkMode === "restricted" ? localProviderEndpoints(con
 if (saveDefaults) {
   if (printPlan) fail("--save-defaults cannot be combined with --print-plan");
   config.defaultSelections = { endpoints: networkMode === "restricted" ? [...egressSel] : state.endpoints, agent: [...agentSel] };
-  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  writeJsonAtomic(configPath, config);
   console.error(`pibox: saved default selections to ${configPath}`);
   process.exit(0);
 }
@@ -332,7 +332,7 @@ if (printPlan) {
   process.exit(0);
 }
 
-writeFileSync(statePath, `${JSON.stringify({ endpoints: networkMode === "restricted" ? [...egressSel] : state.endpoints, agent: [...agentSel] }, null, 2)}\n`);
+writeJsonAtomic(statePath, { endpoints: networkMode === "restricted" ? [...egressSel] : state.endpoints, agent: [...agentSel] });
 process.exitCode = await runPiBox({
   workspace, stateDir: piboxAgentDir, readOnly, allow, localEndpoints, runShell, piArgs, networkMode, provider,
   ...(sync ? { sync: {

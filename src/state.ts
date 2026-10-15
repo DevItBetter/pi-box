@@ -5,6 +5,17 @@ export type PackageSpec = string | { source: string; [key: string]: unknown };
 export const packageSource = (spec: PackageSpec): string => typeof spec === "string" ? spec : spec.source;
 const SYNC_FILES = ["auth.json", "models.json", "models-store.json", "keybindings.json"];
 
+/** Stage next to the destination so rename replaces it atomically. */
+export function writeJsonAtomic(path: string, value: unknown): void {
+  const content = `${JSON.stringify(value, null, 2)}\n`;
+  const scratch = mkdtempSync(join(dirname(path), ".pibox-write-"));
+  try {
+    const staged = join(scratch, "value.json");
+    writeFileSync(staged, content, { mode: 0o600 });
+    renameSync(staged, path);
+  } finally { rmSync(scratch, { recursive: true, force: true }); }
+}
+
 /** Host preparation touches only these entries, never guest-owned package/session trees. */
 export function refuseLinks(dir: string): void {
   if (!existsSync(dir)) return;

@@ -70,6 +70,8 @@ The launch pickers show extra endpoints and your global pi packages and extensio
 
 Optional `defaultSelections` in the config contains `endpoints` and `agent` arrays. Defaults apply only when the corresponding remembered selection is absent. Remembered empty arrays stay empty. Explicit profiles and `--bare` take precedence. `--save-defaults` saves the resolved selections to the chosen config and exits without launching or changing remembered selections. Combine it with `--no-tui` or explicit profiles to skip prompts. It cannot be combined with `--print-plan`.
 
+Remembered selections and saved defaults use atomic file replacement, so an interrupted write cannot leave a partially written destination file.
+
 ## Networking
 
 | Mode | Access |
