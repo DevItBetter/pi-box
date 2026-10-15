@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export interface SessionMetadata {
@@ -11,6 +11,17 @@ export interface SessionMetadata {
   network: string;
   access: string;
   kind: "pi" | "shell" | "exec";
+}
+
+export function inspectInstances(home: string, name?: string) {
+  const instances = join(home, "instances");
+  const names = ["default", ...(existsSync(instances) ? readdirSync(instances).filter((entry) =>
+    /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(entry) && entry !== "default" && lstatSync(join(instances, entry)).isDirectory()) : [])];
+  const sessions = (name ? [name] : names).map((instance) => {
+    const root = instance === "default" ? home : join(instances, instance);
+    return { instance, stateDir: join(root, "agent"), ...inspectSession(root) };
+  });
+  return { version: 2, sessions };
 }
 
 export function inspectSession(home: string) {

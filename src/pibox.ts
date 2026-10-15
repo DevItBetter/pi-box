@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { launchResources, sandboxCommand, validateWorkspace, type AgentLaunchSettings } from "./launch.ts";
 import { sandboxTool } from "./sandbox/bwrap.ts";
 import { runPiBox } from "./index.ts";
-import { packageSource, writeJsonAtomic, type PackageSpec } from "./state.ts";
+import { instanceHome, packageSource, writeJsonAtomic, type PackageSpec } from "./state.ts";
 import { pickItems, type PickerItem } from "./picker.ts";
 
 import { DEFAULT_CONFIG, localProviderEndpoints, profileDescription, profileLabel, profileMembers, providerForArgs, restrictedHosts, type PiboxConfig, type SelectionProfiles } from "./config.ts";
@@ -13,7 +13,8 @@ interface PiboxState { endpoints: string[]; agent: string[]; }
 
 const piAgentDir = join(homedir(), ".pi", "agent");
 const piboxHome = process.env["PIBOX_HOME"] ?? join(homedir(), ".pibox");
-const piboxAgentDir = join(piboxHome, "agent");
+let piboxAgentDir = join(piboxHome, "agent");
+let instance: string | undefined;
 let configPath = join(piboxHome, "config.json");
 const statePath = join(piboxHome, "state.json");
 
@@ -77,6 +78,11 @@ if (argv[commandIndex] === "setup" || argv[commandIndex] === "doctor") {
 for (let i = 0; i < argv.length; i++) {
   const arg = argv[i]!;
   switch (arg) {
+    case "--instance":
+      instance = argv[++i] ?? fail("--instance needs a name");
+      try { piboxAgentDir = join(instanceHome(piboxHome, instance), "agent"); }
+      catch (error) { fail((error as Error).message); }
+      break;
     case "--config":
       configPath = resolve(argv[++i] ?? fail("--config needs a file"));
       break;
@@ -143,41 +149,83 @@ for (let i = 0; i < argv.length; i++) {
       break;
     case "-h":
     case "--help":
-      console.log(
-        "usage: pibox [--shell] [--no-sync] [-C dir] [--allow HOST]...\n" +
-          "             [--network MODE] [--profile NAME] [--bare | --agent-profile NAME]\n" +
-           "             [--print-plan] [pi args...]\n\n" +
-            "       pibox setup|doctor [--config FILE] [--provider NAME]\n" +
-             "       pibox profiles [--config FILE]\n" +
-             "       pibox exec [pibox options] -- COMMAND [ARG...]\n" +
-             "       pibox status [--json]\n" +
-           "  setup           Discover Pi providers and add their egress endpoints.\n" +
-           "  doctor          Check provider authentication and egress config without writing.\n\n" +
-          "Personal pi agent inside bubblewrap. Workspace = cwd (or -C dir).\n" +
-          "  --network MODE  restricted (default): enforce the allowed-host list.\n" +
-          "                  unrestricted: host network, no endpoint restrictions.\n" +
-          "                  none: no network, including provider services.\n" +
-           "  --config FILE   Endpoint catalog and provider-specific host sets.\n" +
-           "  --no-tui        Use remembered selections without prompting.\n" +
-           "  --save-defaults Save selected endpoints and capabilities as defaults, then exit.\n" +
-           "  --print-plan[=json] Show the resolved launch configuration without launching.\n" +
-          "  --provider NAME Select the LLM integration; its endpoint set applies in restricted mode.\n" +
-          "                  Config entries may include explicit loopback URLs for local models.\n" +
-          "Extra endpoints and agent capabilities are picked in a TUI at launch\n" +
-          "(catalog: ~/.pibox/config.json; last selection remembered; all off by\n" +
-          "default). These options control different selections:\n" +
-          "  --allow HOST     Add a host in restricted mode; repeat for more.\n" +
-          "  --bare  Disable optional pi packages/extensions; skip the capability picker.\n" +
-          "          Builtin pi tools remain available. This option does not change network access.\n" +
-          "Provider endpoints + selected extras + --allow form the restricted allowlist.\n" +
-          "Endpoint options have no effect in unrestricted or none mode.\n" +
-          "--profile selects extra endpoints and skips their picker; an empty profile permits only the provider.\n" +
-           "Repeat --profile or --agent-profile to combine members.\n" +
-           "--agent-profile selects capabilities. --no-sync also skips\n" +
-          "re-applying the agent selection to the synced config copy.\n" +
-          "Env: PIBOX_MEMORY (4G), PIBOX_CPU_QUOTA (300%), PIBOX_HOME (~/.pibox), PIBOX_ALLOW (csv).\n" +
-          "Everything unrecognized is passed to pi. See README.md. Use --read-only for a read-only workspace; -- separates pi arguments.",
-      );
+      console.log(`Run Pi inside a Linux bubblewrap sandbox.
+
+Usage:
+  pibox [options] [pi args...]
+  pibox exec [options] -- COMMAND [ARG...]
+  pibox setup|doctor [--config FILE] [--provider NAME] [--instance NAME]
+  pibox profiles [--config FILE]
+  pibox status [--json] [--instance NAME]
+
+Workspace and state:
+  -C DIR             Mount DIR at /workspace. Default: current directory.
+  --read-only        Block workspace writes. Other writers' changes stay visible.
+  --shell            Start bash instead of Pi.
+  --instance NAME    Reuse separate Pi state and cache. An occupied name fails.
+                     Use default for the original ~/.pibox/agent state.
+  --no-sync          Reuse the chosen slot's config without copying host Pi files.
+
+Without --instance, pibox uses the first free persistent state slot.
+Instances can share a workspace, with separate credentials, sessions, and locks.
+New slots copy host Pi config on synced launches; --no-sync leaves them empty.
+
+Network:
+  --network MODE     restricted: provider endpoints plus selected extras. Default.
+                     unrestricted: host network, without endpoint restrictions.
+                     none: no network, including provider connections.
+  --provider NAME    Choose the provider and its endpoint set.
+  --allow HOST       Add a public HTTPS host. Repeat to add more.
+  --profile NAME     Select extra endpoint groups and skip their picker.
+  --config FILE      Read endpoint rules and profiles from FILE.
+
+Endpoint options apply only in restricted mode. An empty endpoint profile
+allows only provider endpoints. Local models need explicit loopback config.
+
+Selections and previews:
+  --agent-profile NAME  Select packages/extensions and skip their picker.
+  --bare                Disable optional packages/extensions; keep built-in tools.
+  --no-tui              Use remembered selections without prompts.
+  --save-defaults       Save selections to config and exit. Incompatible with previews.
+  --print-plan         Show launch details without syncing or launching.
+  --print-plan=json    Write JSON to stdout and skip prompts.
+  -h, --help           Show this help. Use -- --help for Pi's own help.
+
+Repeat either profile flag to combine members. --bare overrides agent profiles.
+Defaults apply when remembered selections are absent; empty selections stay empty.
+Automatic previews describe default state; pibox chooses the free slot at launch.
+Inside Pi, use /pibox to inspect the settings shown in its footer.
+
+Commands:
+  exec      Run a command at /workspace; preserve arguments and exit status.
+            Skip prompts and sync; leave remembered selections unchanged.
+            Shell syntax needs an explicit /bin/bash -c command.
+            Rejects --shell, --bare, --agent-profile, and --save-defaults.
+  setup     Discover provider endpoints and add them to config.
+  doctor    Check auth and endpoint config without writing or network requests.
+            Both inspect --instance NAME, or default state if omitted.
+  profiles  List endpoint groups and endpoint/capability profiles.
+  status    List slots and resource use. --instance filters; --json writes JSON.
+            Never remove locks or stop processes.
+
+Environment:
+  PIBOX_HOME              Config and state root. Default: ~/.pibox.
+  PIBOX_ALLOW             Extra public HTTPS hosts, comma-separated.
+  PIBOX_MEMORY            Memory limit per instance. Default: 4G.
+  PIBOX_CPU_QUOTA         CPU quota per instance. Default: 300%.
+  PIBOX_FILE_MAX          Maximum file size. Default: 4G.
+  PIBOX_CACHE_MAX         Monitored cache limit per instance. Default: 4G.
+  PIBOX_WRITE_GROWTH_MAX  Monitored write growth per instance. Default: 8G.
+  PIBOX_DISK_QUOTA_ROOT   Optional btrfs subvolume with a hard quota.
+
+Examples, from the same project in separate terminals:
+  pibox --instance writer
+  pibox --instance reviewer --read-only
+  pibox status --json
+  pibox exec --network none -- /bin/bash -c 'pwd && ls'
+
+Unknown launch arguments go to Pi. Use -- to pass Pi arguments unchanged.
+See README.md for profile formats, authentication, state paths, and limits.`);
       process.exit(0);
       break;
     default:
@@ -188,11 +236,11 @@ for (let i = 0; i < argv.length; i++) {
 }
 
 if (showStatus) {
-  const { inspectSession } = await import("./session.ts");
-  const status = inspectSession(piboxHome);
-  if (jsonStatus) console.log(JSON.stringify(status, null, 2));
-  else {
-    console.log(`pibox: ${status.state}`);
+  const { inspectInstances } = await import("./session.ts");
+  const report = inspectInstances(piboxHome, instance);
+  if (jsonStatus) console.log(JSON.stringify(report, null, 2));
+  else for (const status of report.sessions) {
+    console.log(`pibox ${status.instance}: ${status.state}`);
     if (status.session) {
       console.log(`scope: ${status.session.scope}`);
       console.log(`workspace: ${status.session.workspace} (${status.session.access})`);
@@ -357,7 +405,7 @@ if (printPlan) {
     version: 1,
     workspace: { host: workspace, guest: "/workspace", access: readOnly ? "read-only" : "read-write" },
     network: { mode: networkMode, provider, hosts: allow, localEndpoints },
-    stateDir: piboxAgentDir, configPath, sync,
+    stateDir: piboxAgentDir, instance: instance ?? "auto", stateAllocation: instance ? "named" : "first-free-at-launch", configPath, sync,
     selections: { endpoints: [...egressSel], agent: [...agentSel] },
     agent: { packages: settings.packages ?? [], extensions: extensions.map((file) => `/home/sandbox/.pi/agent/extensions/${file}`), builtinExtensions: ["/opt/pibox/status-extension.ts"] },
     command: sandboxCommand(node, settings, extensions, runShell, piArgs, command),
@@ -382,6 +430,7 @@ if (printPlan) {
 if (!execMode) writeJsonAtomic(statePath, { endpoints: networkMode === "restricted" ? [...egressSel] : state.endpoints, agent: [...agentSel] });
 process.exitCode = await runPiBox({
   workspace, stateDir: piboxAgentDir, readOnly, allow, localEndpoints, runShell, piArgs, networkMode, provider,
+  ...(instance ? {} : { instanceRoot: piboxHome }),
   ...(command ? { command } : {}),
   ...(sync ? { sync: {
     source: piAgentDir, settings: { ...hostSettings, defaultProvider: provider },

@@ -41,6 +41,21 @@ export function unlockState(home: string): void {
   rmSync(join(home, "active.lock"), { recursive: true, force: true });
 }
 
+export function instanceHome(home: string, name: string): string {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(name)) throw new Error("instance name must contain 1-64 letters, digits, underscores, or hyphens, starting with a letter or digit");
+  return name === "default" ? home : join(home, "instances", name);
+}
+
+/** Reserve the first free persistent slot without sharing writable agent state. */
+export function reserveInstance(home: string): string {
+  for (let slot = 1; ; slot++) {
+    const candidate = slot === 1 ? home : instanceHome(home, `auto-${slot}`);
+    mkdirSync(candidate, { recursive: true, mode: 0o700 });
+    try { mkdirSync(join(candidate, "active.lock")); return candidate; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+  }
+}
+
 export function syncAgent(source: string, dest: string, settings: Record<string, unknown>, packages: PackageSpec[], extensions: string[]): void {
   mkdirSync(dest, { recursive: true, mode: 0o700 });
   refuseLinks(dest);

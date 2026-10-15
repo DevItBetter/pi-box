@@ -6,6 +6,23 @@ import { join } from "node:path";
 import test from "node:test";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 
+test("named instances select isolated state in previews and status", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pibox-instance-"));
+  try {
+    const project = join(dir, "project"); mkdirSync(project);
+    const run = (...args: string[]) => spawnSync(process.execPath, [new URL("../src/pibox.ts", import.meta.url).pathname, ...args], {
+      env: { ...process.env, PIBOX_HOME: dir }, encoding: "utf8", timeout: 5000,
+    });
+    const plan = run("-C", project, "--instance", "review", "--network", "none", "--print-plan=json", "--no-sync");
+    assert.equal(plan.status, 0, plan.stderr);
+    assert.equal(JSON.parse(plan.stdout).stateDir, join(dir, "instances", "review", "agent"));
+    const report = run("status", "--instance", "review", "--json");
+    assert.equal(JSON.parse(report.stdout).sessions[0].instance, "review");
+    assert.equal(JSON.parse(report.stdout).sessions[0].state, "idle");
+    assert.equal(run("status", "--instance", "../escape").status, 2);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("exec requires an argv delimiter and previews exact arguments", () => {
   const dir = mkdtempSync(join(tmpdir(), "pibox-exec-"));
   try {

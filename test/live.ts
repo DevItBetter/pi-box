@@ -36,7 +36,7 @@ try {
       env: { ...process.env, PIBOX_HOME: join(dir, "state") }, encoding: "utf8", timeout: 10000,
     });
     assert.equal(result.status, 0, result.stderr);
-    return JSON.parse(result.stdout);
+    return JSON.parse(result.stdout).sessions[0];
   };
   assert.equal(status().state, "idle");
   const running = spawn(join(root, "bin/pibox"), ["exec", "-C", workspace, "--network", "none", "--", "/bin/bash", "-c", "echo inspection-ready; read -r finish"], {
@@ -54,8 +54,8 @@ try {
     assert.equal(active.session.kind, "exec");
     assert.match(active.session.scope, /^pibox-\d+-\d+\.scope$/);
     assert.ok(active.resources.MemoryCurrent);
-    // A second invocation cannot reuse an active state directory.
-    const conflict = run(["--network", "none", "--shell"], "true\n");
+    // Explicitly sharing writable state is still refused.
+    const conflict = run(["--instance", "default", "--network", "none", "--shell"], "true\n");
     assert.notEqual(conflict.status, 0);
     assert.match(conflict.stderr, /another pibox session/);
   } finally { running.stdin.end("finish\n"); await finished; }
@@ -64,6 +64,40 @@ try {
   writeFileSync(join(staleLock, "session.json"), JSON.stringify({ version: 1, pid: 2147483647, scope: "pibox-2147483647-1.scope", workspace, startedAt: new Date().toISOString(), kind: "exec", network: "none", access: "read-write" }));
   assert.equal(status().state, "stale");
   rmSync(staleLock, { recursive: true });
+  // Two automatic slots can mount one workspace with different access modes.
+  for (const mode of ["none", "restricted"]) {
+    const children: ReturnType<typeof spawn>[] = [];
+    const completions: Promise<number | null>[] = [];
+    try {
+      for (const readOnly of [false, true]) {
+        const script = readOnly
+          ? 'test ! -e "$HOME/.pi/agent/other-instance"; if touch /workspace/ro-blocked 2>/dev/null; then exit 8; fi; echo concurrent-ready; read -r finish; test -f /workspace/concurrent-written'
+          : 'touch "$HOME/.pi/agent/other-instance"; touch /workspace/concurrent-written; echo concurrent-ready; read -r finish';
+        const child = spawn(join(root, "bin/pibox"), ["exec", "-C", workspace, "--network", mode, "--provider", "openai", ...(readOnly ? ["--read-only"] : []), "--", "/bin/bash", "-c", script], {
+          env: { ...process.env, PIBOX_HOME: join(dir, "state") }, stdio: ["pipe", "pipe", "inherit"],
+        });
+        children.push(child);
+        completions.push(new Promise((resolve, reject) => { child.once("error", reject); child.once("close", resolve); }));
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error("concurrent instance did not start")), 15000);
+          child.stdout!.once("data", () => { clearTimeout(timer); resolve(); });
+        });
+      }
+      const report = spawnSync(join(root, "bin/pibox"), ["status", "--json"], { env: { ...process.env, PIBOX_HOME: join(dir, "state") }, encoding: "utf8" });
+      const active = JSON.parse(report.stdout).sessions.filter((s: { state: string }) => s.state === "active");
+      assert.equal(active.length, 2);
+      assert.notEqual(active[0].stateDir, active[1].stateDir);
+      assert.notEqual(active[0].session.scope, active[1].session.scope);
+      assert.deepEqual(new Set(active.map((s: { session: { access: string } }) => s.session.access)), new Set(["read-write", "read-only"]));
+      children[0]!.stdin!.end("finish\n");
+      assert.equal(await completions[0], 0);
+      const surviving = spawnSync(join(root, "bin/pibox"), ["status", "--json", "--instance", "auto-2"], { env: { ...process.env, PIBOX_HOME: join(dir, "state") }, encoding: "utf8" });
+      assert.equal(JSON.parse(surviving.stdout).sessions[0].state, "active");
+    } finally {
+      for (const child of children) if (!child.stdin!.writableEnded) child.stdin!.end("finish\n");
+      for (const completion of completions) assert.equal(await completion, 0);
+    }
+  }
   for (const mode of ["none", "restricted", "unrestricted"]) {
     const args = ["exec", "-C", workspace, "--network", mode, "--provider", "openai", "--"];
     const exec = (command: string[]) => spawnSync(join(root, "bin/pibox"), [...args, ...command], {
