@@ -41,6 +41,7 @@ Give your agent this instruction:
 pibox setup                            # discover providers and configure their egress endpoints
 pibox doctor                           # report authentication and endpoint problems
 pibox profiles                         # list endpoint groups and selection profiles
+pibox status --json                    # inspect the session using this PIBOX_HOME
 pibox --save-defaults                  # choose default selections and exit
 pibox -C ~/dev/project                 # choose extra endpoints, packages, and extensions
 pibox --bare                           # built-in pi tools, no optional packages or extensions
@@ -192,6 +193,8 @@ The sandbox uses `~/.pibox/agent`. On synced launches, pibox copies authenticati
 Selected extensions and shell commands can read the copied provider credentials. The sandbox can change its copies, but these mounts give it no write access to the host's pi directory. Choose a workspace whose contents you are comfortable letting pi read.
 
 Only one session can use a state directory at a time. Pibox holds a lock during sync, launch, and cleanup. After an abrupt stop, inspect the session's `pibox-*.scope` before removing `active.lock`. If pibox cannot confirm containment cleanup, it keeps the lock and reports the scope name.
+
+`pibox status` reports the session for the current `PIBOX_HOME`, including its systemd scope, workspace, start time, network mode, and systemd resource counters and limits. `--json` provides machine-readable output. States are `idle`, `active`, `starting-or-stopping`, `stale`, or `unknown`. A lock without metadata, including locks from older versions, is reported as unknown. Stale means the recorded launcher is gone and its scope is inactive. Status never removes locks or stops processes. Resource values use systemd's native units and sentinel values. Status reports successful inspection with exit code 0, including idle and unknown states.
 
 ## Resource limits
 

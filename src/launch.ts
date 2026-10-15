@@ -7,7 +7,8 @@ import { assertCacheUnderCeiling, bwrapAvailable, diskLimitsOf, openBwrapFds, sa
 import { startEgressProxy, type EgressProxy } from "./sandbox/egress-proxy.ts";
 import { parseLocalEndpoints, startLocalRelay } from "./sandbox/local-relay.ts";
 import { providerForArgs } from "./config.ts";
-import { packageSource, type PackageSpec } from "./state.ts";
+import { packageSource, writeJsonAtomic, type PackageSpec } from "./state.ts";
+import type { SessionMetadata } from "./session.ts";
 import type { SandboxStatus } from "./sandbox/status-extension.ts";
 
 export interface LaunchOptions {
@@ -161,6 +162,16 @@ export async function launchSandbox(opts: LaunchOptions): Promise<number> {
     const watch = await startDiskWatch(sandboxDiskBounds(spec, limits));
     try {
       const opened = openBwrapFds(spec, unit);
+      try {
+        const session: SessionMetadata = {
+          version: 1, pid: process.pid, scope: `${unit}.scope`, workspace,
+          startedAt: new Date().toISOString(), network: networkMode,
+          access: opts.readOnly ? "read-only" : "read-write",
+          kind: opts.command ? "exec" : opts.runShell ? "shell" : "pi",
+        };
+        const lock = join(dirname(stateDir), "active.lock");
+        if (existsSync(lock)) writeJsonAtomic(join(lock, "session.json"), session);
+      } catch (error) { opened.close(); throw error; }
       const child = spawn(opened.argv[0]!, opened.argv.slice(1), { stdio: ["inherit", "inherit", "inherit", ...opened.fds], env: { ...process.env, PATH: "/usr/bin:/bin" } });
       opened.close();
       const stop = (): void => { child.kill("SIGKILL"); };

@@ -49,6 +49,8 @@ let maintenance: "setup" | "doctor" | undefined;
 let listProfiles = false;
 let execMode = false;
 let command: string[] | undefined;
+let showStatus = false;
+let jsonStatus = false;
 const extraAllow: string[] = [];
 if (process.env["PIBOX_ALLOW"] !== undefined && process.env["PIBOX_ALLOW"] !== "") {
   extraAllow.push(...process.env["PIBOX_ALLOW"].split(",").map((h) => h.trim()));
@@ -68,12 +70,19 @@ if (argv[commandIndex] === "setup" || argv[commandIndex] === "doctor") {
   noTui = true;
   sync = false;
   argv.splice(commandIndex, 1);
+} else if (argv[commandIndex] === "status") {
+  showStatus = true;
+  argv.splice(commandIndex, 1);
 }
 for (let i = 0; i < argv.length; i++) {
   const arg = argv[i]!;
   switch (arg) {
     case "--config":
       configPath = resolve(argv[++i] ?? fail("--config needs a file"));
+      break;
+    case "--json":
+      if (!showStatus) fail("--json is only supported by status; use --print-plan=json for previews");
+      jsonStatus = true;
       break;
     case "--provider":
       piArgs.push(arg, argv[++i] ?? fail("--provider needs a name"));
@@ -141,6 +150,7 @@ for (let i = 0; i < argv.length; i++) {
             "       pibox setup|doctor [--config FILE] [--provider NAME]\n" +
              "       pibox profiles [--config FILE]\n" +
              "       pibox exec [pibox options] -- COMMAND [ARG...]\n" +
+             "       pibox status [--json]\n" +
            "  setup           Discover Pi providers and add their egress endpoints.\n" +
            "  doctor          Check provider authentication and egress config without writing.\n\n" +
           "Personal pi agent inside bubblewrap. Workspace = cwd (or -C dir).\n" +
@@ -171,9 +181,27 @@ for (let i = 0; i < argv.length; i++) {
       process.exit(0);
       break;
     default:
+      if (showStatus) fail(`unknown status option ${arg}`);
       if (execMode) fail(`unknown exec option ${arg}; put the command after --`);
       piArgs.push(arg);
   }
+}
+
+if (showStatus) {
+  const { inspectSession } = await import("./session.ts");
+  const status = inspectSession(piboxHome);
+  if (jsonStatus) console.log(JSON.stringify(status, null, 2));
+  else {
+    console.log(`pibox: ${status.state}`);
+    if (status.session) {
+      console.log(`scope: ${status.session.scope}`);
+      console.log(`workspace: ${status.session.workspace} (${status.session.access})`);
+      console.log(`started: ${status.session.startedAt}; kind: ${status.session.kind}; network: ${status.session.network}`);
+    }
+    if (status.resources) for (const [key, value] of Object.entries(status.resources)) console.log(`${key}: ${value}`);
+    if ("detail" in status) console.log(status.detail);
+  }
+  process.exit(0);
 }
 
 if (execMode) {

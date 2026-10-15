@@ -31,6 +31,39 @@ try {
   const version = run(["--", "--version"]);
   assert.equal(version.status, 0, version.stderr);
   assert.match(version.stdout, /1\.1\.0/);
+  const status = () => {
+    const result = spawnSync(join(root, "bin/pibox"), ["status", "--json"], {
+      env: { ...process.env, PIBOX_HOME: join(dir, "state") }, encoding: "utf8", timeout: 10000,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout);
+  };
+  assert.equal(status().state, "idle");
+  const running = spawn(join(root, "bin/pibox"), ["exec", "-C", workspace, "--network", "none", "--", "/bin/bash", "-c", "echo inspection-ready; read -r finish"], {
+    env: { ...process.env, PIBOX_HOME: join(dir, "state") }, stdio: ["pipe", "pipe", "inherit"],
+  });
+  const finished = new Promise<number | null>((resolve, reject) => { running.once("error", reject); running.once("close", resolve); });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("inspection fixture did not start")), 15000);
+      running.stdout.once("data", () => { clearTimeout(timer); resolve(); });
+    });
+    const active = status();
+    assert.equal(active.state, "active");
+    assert.equal(active.session.workspace, workspace);
+    assert.equal(active.session.kind, "exec");
+    assert.match(active.session.scope, /^pibox-\d+-\d+\.scope$/);
+    assert.ok(active.resources.MemoryCurrent);
+    // A second invocation cannot reuse an active state directory.
+    const conflict = run(["--network", "none", "--shell"], "true\n");
+    assert.notEqual(conflict.status, 0);
+    assert.match(conflict.stderr, /another pibox session/);
+  } finally { running.stdin.end("finish\n"); await finished; }
+  assert.equal(status().state, "idle");
+  const staleLock = join(dir, "state", "active.lock"); mkdirSync(staleLock);
+  writeFileSync(join(staleLock, "session.json"), JSON.stringify({ version: 1, pid: 2147483647, scope: "pibox-2147483647-1.scope", workspace, startedAt: new Date().toISOString(), kind: "exec", network: "none", access: "read-write" }));
+  assert.equal(status().state, "stale");
+  rmSync(staleLock, { recursive: true });
   for (const mode of ["none", "restricted", "unrestricted"]) {
     const args = ["exec", "-C", workspace, "--network", mode, "--provider", "openai", "--"];
     const exec = (command: string[]) => spawnSync(join(root, "bin/pibox"), [...args, ...command], {
