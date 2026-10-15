@@ -131,6 +131,15 @@ export async function launchSandbox(opts: LaunchOptions): Promise<number> {
       const stop = (): void => { child.kill("SIGKILL"); };
       const signals = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
       for (const signal of signals) process.on(signal, stop);
+      // --new-session detaches the guest from the terminal's foreground group.
+      // Signal the whole scope so Pi receives resizes through every wrapper.
+      const resize = (): void => {
+        const notifier = spawn("/usr/bin/systemctl", ["--user", "kill", "--signal=SIGWINCH", "--kill-whom=all", `${unit}.scope`], {
+          stdio: "ignore", timeout: 5000,
+        });
+        notifier.on("error", () => {});
+      };
+      process.on("SIGWINCH", resize);
       watch.arm((why) => { console.error(`pibox: ${why}`); stop(); });
       let code: number;
       try {
@@ -139,6 +148,7 @@ export async function launchSandbox(opts: LaunchOptions): Promise<number> {
           child.once("close", (status, signal) => resolve(status ?? (signal ? 128 + 9 : 1)));
         });
       } finally {
+        process.off("SIGWINCH", resize);
         for (const signal of signals) process.off(signal, stop);
         systemctl(["stop", `${unit}.scope`]);
         const state = systemctl(["show", `${unit}.scope`, "--property=ActiveState", "--value"]);

@@ -31,6 +31,45 @@ try {
   const version = run(["--", "--version"]);
   assert.equal(version.status, 0, version.stderr);
   assert.match(version.stdout, /1\.1\.0/);
+  // script supplies a controlling PTY. Changing its size must reach the guest
+  // even though bubblewrap starts a separate session with --new-session.
+  const resizeConfig = join(dir, "resize-config.json");
+  writeFileSync(resizeConfig, JSON.stringify({ providerEndpoints: { openai: ["api.openai.com"] }, endpointProfiles: { test: [] } }));
+  const quote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
+  for (const mode of ["none", "restricted", "unrestricted"]) {
+    const command = [join(root, "bin/pibox"), "-C", workspace, "--bare", "--no-sync", "--provider", "openai", "--config", resizeConfig, "--profile", "test", "--network", mode, "--shell"];
+    const terminal = spawn("/usr/bin/script", ["--quiet", "--return", "--command", command.map(quote).join(" "), "/dev/null"], {
+      env: { ...process.env, TERM: "xterm-256color", PIBOX_HOME: join(dir, "state") }, stdio: ["pipe", "pipe", "pipe"],
+    });
+    let output = "";
+    terminal.stdout.on("data", (chunk) => { output += String(chunk); });
+    terminal.stderr.on("data", (chunk) => { output += String(chunk); });
+    const probe = `
+      const { spawnSync } = require("node:child_process");
+      const sizes = [[120, 35], [45, 12], [80, 24]];
+      const timer = setTimeout(() => { console.error("resize timed out"); process.exit(1); }, 5000);
+      function resize() {
+        const [columns, rows] = sizes[0];
+        const result = spawnSync("/usr/bin/stty", ["cols", String(columns), "rows", String(rows)], { stdio: "inherit" });
+        if (result.status !== 0) process.exit(2);
+      }
+      process.stdout.on("resize", () => {
+        const [columns, rows] = sizes[0];
+        if (process.stdout.columns !== columns || process.stdout.rows !== rows) process.exit(3);
+        sizes.shift();
+        if (sizes.length) setTimeout(resize, 50);
+        else { clearTimeout(timer); console.log("terminal-resize-ok"); }
+      });
+      resize();
+    `;
+    terminal.stdin.end(`stty cols 80 rows 24\nexec node -e ${quote(probe)}\n`);
+    const status = await new Promise<number | null>((resolve, reject) => {
+      const timeout = setTimeout(() => { terminal.kill("SIGKILL"); reject(new Error(`terminal resize test timed out: ${output}`)); }, 20000);
+      terminal.once("error", (error) => { clearTimeout(timeout); reject(error); });
+      terminal.once("close", (code) => { clearTimeout(timeout); resolve(code); });
+    });
+    assert.equal(status, 0, `${mode} terminal resize: ${output}`);
+  }
   const script = `set -eu\ntest "$HOME" = /home/sandbox\ntest -z "\u0024{PIBOX_TEST_SECRET:-}"\ntest ! -e '${outside}'\ntest ! -e '${join(homedir(), '.ssh')}'\nprintf written > /workspace/result\ncurl -sS --max-time 15 -o /dev/null -w '%{http_code}' https://api.openai.com/v1/models\nprintf '\\n'\nif curl -sS --max-time 5 https://example.com; then exit 9; fi\necho sandbox-ok\n`;
   process.env["PIBOX_TEST_SECRET"] = "not forwarded";
   const rw = run(["--allow", "api.openai.com", "--shell"], script);
