@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { validateWorkspace } from "./launch.ts";
+import { launchResources, sandboxCommand, validateWorkspace, type AgentLaunchSettings } from "./launch.ts";
+import { sandboxTool } from "./sandbox/bwrap.ts";
 import { runPiBox } from "./index.ts";
 import { packageSource, type PackageSpec } from "./state.ts";
 import { pickItems, type PickerItem } from "./picker.ts";
@@ -36,6 +37,7 @@ let workspace = process.cwd();
 let runShell = false;
 let sync = true;
 let printPlan = false;
+let jsonPlan = false;
 let noTui = false;
 let saveDefaults = false;
 let readOnly = false;
@@ -88,6 +90,11 @@ for (let i = 0; i < argv.length; i++) {
     case "--print-plan":
       printPlan = true;
       break;
+    case "--print-plan=json":
+      printPlan = true;
+      jsonPlan = true;
+      noTui = true;
+      break;
     case "--no-tui":
       noTui = true;
       break;
@@ -131,6 +138,7 @@ for (let i = 0; i < argv.length; i++) {
            "  --config FILE   Endpoint catalog and provider-specific host sets.\n" +
            "  --no-tui        Use remembered selections without prompting.\n" +
            "  --save-defaults Save selected endpoints and capabilities as defaults, then exit.\n" +
+           "  --print-plan[=json] Show the resolved launch configuration without launching.\n" +
           "  --provider NAME Select the LLM integration; its endpoint set applies in restricted mode.\n" +
           "                  Config entries may include explicit loopback URLs for local models.\n" +
           "Extra endpoints and agent capabilities are picked in a TUI at launch\n" +
@@ -289,12 +297,38 @@ const planLines = [
   `network = ${networkMode}; egress = ${networkMode !== "restricted" ? "endpoint sets inactive" : `${provider} endpoints`}${egressSel.size > 0 ? ` + ${[...egressSel].join(", ")}` : ""}${networkMode === "restricted" && extraAllow.length > 0 ? ` + --allow ${extraAllow.join(", ")}` : ""}`,
   `agent  = ${agentSel.size > 0 ? [...agentSel].join(", ") : "bare pi"}`,
 ];
-for (const l of planLines) console.error(`pibox: ${l}`);
+if (!jsonPlan) for (const l of planLines) console.error(`pibox: ${l}`);
 
 if (printPlan) {
+  const packages = pkgItems.filter((p) => agentSel.has(p.key)).map((p) => p.spec);
+  const settings: AgentLaunchSettings = sync ? { ...hostSettings, packages } : readJson<AgentLaunchSettings>(join(piboxAgentDir, "settings.json")) ?? {};
+  const extensionDir = join(piboxAgentDir, "extensions");
+  const extensions = sync ? extItems.filter((e) => agentSel.has(e.key)).map((e) => e.file)
+    : existsSync(extensionDir) ? readdirSync(extensionDir).filter((file) => /\.(ts|js)$/.test(file)) : [];
+  const node = sandboxTool(realpathSync(process.execPath), "/opt/node", "Node.js").guestPath;
+  const plan = {
+    version: 1,
+    workspace: { host: workspace, guest: "/workspace", access: readOnly ? "read-only" : "read-write" },
+    network: { mode: networkMode, provider, hosts: allow, localEndpoints },
+    stateDir: piboxAgentDir, configPath, sync,
+    selections: { endpoints: [...egressSel], agent: [...agentSel] },
+    agent: { packages: settings.packages ?? [], extensions: extensions.map((file) => `/home/sandbox/.pi/agent/extensions/${file}`), builtinExtensions: ["/opt/pibox/status-extension.ts"] },
+    command: sandboxCommand(node, settings, extensions, runShell, piArgs),
+    resources: launchResources(),
+    diskQuotaRoot: process.env["PIBOX_DISK_QUOTA_ROOT"] ?? null,
+  };
+  if (jsonPlan) {
+    console.log(JSON.stringify(plan, null, 2));
+    process.exit(0);
+  }
   console.error(`pibox: workspace = ${workspace} at /workspace (${readOnly ? "read-only" : "read-write"})`);
   console.error(`pibox: hosts = ${networkMode === "restricted" ? allow.length ? allow.join(", ") : "(none)" : "(endpoint rules inactive)"}`);
   if (localEndpoints.length) console.error(`pibox: local provider endpoints = ${localEndpoints.join(", ")}`);
+  console.error(`pibox: state = ${piboxAgentDir}; sync = ${sync}`);
+  console.error(`pibox: packages = ${JSON.stringify(plan.agent.packages)}`);
+  console.error(`pibox: extensions = ${[...plan.agent.builtinExtensions, ...plan.agent.extensions].join(", ")}`);
+  console.error(`pibox: command = ${JSON.stringify(plan.command)}`);
+  console.error(`pibox: resources = ${JSON.stringify(plan.resources)}; disk quota root = ${plan.diskQuotaRoot ?? "none"}`);
   process.exit(0);
 }
 

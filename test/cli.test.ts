@@ -6,6 +6,28 @@ import { join } from "node:path";
 import test from "node:test";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 
+test("JSON preview reports actual no-sync state and guest arguments without changing selections", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pibox-plan-"));
+  try {
+    const project = join(dir, "project"); const home = join(dir, "home"); const agent = join(dir, "agent");
+    mkdirSync(project); mkdirSync(home); mkdirSync(join(agent, "extensions"), { recursive: true });
+    writeFileSync(join(dir, "config.json"), JSON.stringify(DEFAULT_CONFIG));
+    writeFileSync(join(agent, "settings.json"), JSON.stringify({ packages: ["npm:existing"] }));
+    writeFileSync(join(agent, "extensions", "existing.ts"), "export default () => {};\n");
+    const result = spawnSync(process.execPath, [new URL("../src/pibox.ts", import.meta.url).pathname, "-C", project, "--print-plan=json", "--no-sync", "--bare", "--read-only", "--", "-p", "a prompt with spaces"], {
+      env: { ...process.env, HOME: home, PIBOX_HOME: dir, PIBOX_MEMORY: "2G", PIBOX_ALLOW: "" }, encoding: "utf8", timeout: 5000,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const plan = JSON.parse(result.stdout);
+    assert.equal(plan.version, 1);
+    assert.deepEqual(plan.workspace, { host: project, guest: "/workspace", access: "read-only" });
+    assert.deepEqual(plan.agent.packages, ["npm:existing"]);
+    assert.deepEqual(plan.agent.extensions, ["/home/sandbox/.pi/agent/extensions/existing.ts"]);
+    assert.deepEqual(plan.command.slice(-2), ["-p", "a prompt with spaces"]);
+    assert.equal(plan.resources.memoryMax, "2G");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("defaults fill absent selections, preserve empty state, and save without launching", () => {
   const dir = mkdtempSync(join(tmpdir(), "pibox-defaults-"));
   try {

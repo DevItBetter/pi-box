@@ -55,6 +55,7 @@ pibox --allow api.example.com          # add an HTTPS host in restricted mode
 pibox --read-only                      # read-only project
 pibox --shell                          # run bash inside the sandbox
 pibox --print-plan                     # show selections without syncing or launching
+pibox --print-plan=json                # machine-readable launch plan, without prompts
 pibox --no-sync                        # reuse the sandbox's existing pi configuration
 pibox --bare -- -p "Review this project"
 ```
@@ -62,6 +63,8 @@ pibox --bare -- -p "Review this project"
 `--bare` skips the package and extension picker and disables those optional additions. Pi's built-in tools remain available. This flag does not change network access.
 
 Unknown arguments go to pi. Use `--` to pass arguments such as pi's own `--help`. With `--no-sync`, pibox reuses its existing pi configuration. Package and extension selections take effect when you next launch with sync enabled.
+
+Launch previews include workspace access, endpoint rules, state location, packages, extension paths, the guest command, and resource limits. `--print-plan=json` writes a versioned JSON object to stdout and skips the pickers. With `--no-sync`, previews report the packages and extensions already in sandbox state. The command is the guest Pi or shell command; restricted-mode network plumbing is started around it at launch. Previews do not probe containment or provider connectivity.
 
 The launch pickers show extra endpoints and your global pi packages and extensions. Use arrow keys or `j`/`k` to move, Space to toggle, `a` to select all, `n` to clear, Enter to confirm, and `q` to cancel. On the first launch, all extras are off. Pibox saves your choices in `~/.pibox/state.json` and reuses them for noninteractive launches.
 

@@ -48,6 +48,31 @@ export function validateWorkspace(input: string): string {
 
 export class ContainmentCleanupError extends Error {}
 
+export interface AgentLaunchSettings { packages?: PackageSpec[]; defaultProvider?: string; }
+
+export function sandboxCommand(node: string, settings: AgentLaunchSettings, extensions: string[], runShell: boolean, piArgs: string[]): string[] {
+  if (runShell) return ["/bin/bash", "--noprofile", "--norc"];
+  const args = ["--offline", "--no-approve", "--no-mcp", "-e", "/opt/pibox/status-extension.ts"];
+  if (!settings.packages?.length) {
+    args.push("--no-extensions");
+    for (const file of extensions) args.push("-e", `/home/sandbox/.pi/agent/extensions/${file}`);
+  }
+  return [node, "/opt/pi-modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js", ...args, ...piArgs];
+}
+
+export function launchResources() {
+  return {
+    memoryMax: process.env["PIBOX_MEMORY"] ?? "4G",
+    cpuQuota: process.env["PIBOX_CPU_QUOTA"] ?? "300%",
+    tasksMax: 512,
+    disk: diskLimitsOf({
+      fileMax: process.env["PIBOX_FILE_MAX"] ?? "4G",
+      cacheMax: process.env["PIBOX_CACHE_MAX"] ?? "4G",
+      writeGrowthMax: process.env["PIBOX_WRITE_GROWTH_MAX"] ?? "8G",
+    }, "pibox"),
+  };
+}
+
 function systemctl(args: string[]): ReturnType<typeof spawnSync> {
   return spawnSync("/usr/bin/systemctl", ["--user", ...args], { encoding: "utf8", timeout: 5000 });
 }
@@ -65,20 +90,14 @@ export async function launchSandbox(opts: LaunchOptions): Promise<number> {
   // Resolve the dependency where npm installed it, including a consumer's hoisted layout.
   const piRoot = dirname(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))));
   const modules = realpathSync(dirname(dirname(piRoot)));
-  const pi = "/opt/pi-modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js";
   const cachePath = join(dirname(stateDir), "cache");
   mkdirSync(cachePath, { recursive: true, mode: 0o700 });
   const cache = realpathSync(cachePath);
   const overlaps = (a: string, b: string): boolean => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
   if (overlaps(cache, workspace) || overlaps(cache, stateDir)) throw new Error("cache, state, and workspace must be separate directories");
   const settingsFile = join(stateDir, "settings.json");
-  const settings = existsSync(settingsFile) ? JSON.parse(readFileSync(settingsFile, "utf8")) as { packages?: PackageSpec[]; defaultProvider?: string } : {};
+  const settings = existsSync(settingsFile) ? JSON.parse(readFileSync(settingsFile, "utf8")) as AgentLaunchSettings : {};
   const extensions = existsSync(join(stateDir, "extensions")) ? readdirSync(join(stateDir, "extensions")).filter((f) => /\.(ts|js)$/.test(f)) : [];
-  const agentArgs = ["--no-approve", "--no-mcp", "-e", "/opt/pibox/status-extension.ts"];
-  if (!(settings.packages?.length)) {
-    agentArgs.push("--no-extensions");
-    for (const file of extensions) agentArgs.push("-e", `/home/sandbox/.pi/agent/extensions/${file}`);
-  }
   const status: SandboxStatus = {
     network: networkMode, workspace: opts.readOnly ? "read-only" : "read-write",
     provider: opts.provider ?? providerForArgs(opts.piArgs, settings.defaultProvider ?? "unknown", {}),
@@ -86,11 +105,8 @@ export async function launchSandbox(opts: LaunchOptions): Promise<number> {
     localEndpoints: networkMode === "restricted" ? opts.localEndpoints ?? [] : [],
     capabilities: [...(settings.packages ?? []).map(packageSource), ...extensions],
   };
-  const limits = diskLimitsOf({
-    fileMax: process.env["PIBOX_FILE_MAX"] ?? "4G",
-    cacheMax: process.env["PIBOX_CACHE_MAX"] ?? "4G",
-    writeGrowthMax: process.env["PIBOX_WRITE_GROWTH_MAX"] ?? "8G",
-  }, "pibox");
+  const resources = launchResources();
+  const limits = resources.disk;
   await assertCacheUnderCeiling(cache, limits.cacheBytes!);
   const scratch = networkMode === "restricted" ? mkdtempSync(join(process.env["XDG_RUNTIME_DIR"] ?? tmpdir(), "pibox-proxy-")) : undefined;
   const unit = `pibox-${process.pid}-${Date.now()}`;
@@ -130,10 +146,10 @@ export async function launchSandbox(opts: LaunchOptions): Promise<number> {
         { hostPath: fileURLToPath(new URL(import.meta.url.endsWith(".ts") ? "./sandbox/status-extension.ts" : "./sandbox/status-extension.js", import.meta.url)), guestPath: "/opt/pibox/status-extension.ts" },
         { hostPath: fileURLToPath(new URL("./sandbox/egress-forwarder.mjs", import.meta.url)), guestPath: "/opt/pibox/egress-forwarder.mjs" }],
       env, ...limits,
-      caps: { memoryMax: process.env["PIBOX_MEMORY"] ?? "4G", cpuQuota: process.env["PIBOX_CPU_QUOTA"] ?? "300%" },
-      tasksMax: 512,
+      caps: { memoryMax: resources.memoryMax, cpuQuota: resources.cpuQuota },
+      tasksMax: resources.tasksMax,
       cmd: [...(networkMode === "restricted" ? [node.guestPath, "/opt/pibox/egress-forwarder.mjs", "/proxy/egress.sock", "18080", "/proxy/local.json", "--"] : []),
-        ...(opts.runShell ? ["/bin/bash", "--noprofile", "--norc"] : [node.guestPath, pi, "--offline", ...agentArgs, ...opts.piArgs])],
+        ...sandboxCommand(node.guestPath, settings, extensions, opts.runShell, opts.piArgs)],
     };
     if (!process.env["PIBOX_DISK_QUOTA_ROOT"]) console.error("pibox: disk growth is monitored; no hard aggregate disk quota is configured.");
     const watch = await startDiskWatch(sandboxDiskBounds(spec, limits));
